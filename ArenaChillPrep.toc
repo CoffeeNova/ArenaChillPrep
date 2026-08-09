@@ -1,0 +1,36 @@
+## Interface: 20506
+## Title: ArenaChillPrep
+## Notes: Auto-trades crafted items (e.g. healthstones) to your partner during arena preparation on TBC Anniversary.
+## Author: ArenaChillPrep
+## Version: 0.1.0
+## License: MIT
+## SavedVariables: ArenaChillPrepDB
+## DefaultState: enabled
+
+# Load order matters: no libraries, so bootstrap first, then Data/Utils, then Classes.
+# Every file receives the shared ACP table through the `...` vararg chain
+# (each module file must end with `return ACP;`).
+
+bootstrap.lua
+
+Data/Constants.lua
+Data/Items.lua
+Data/DefaultSettings.lua
+Data/Localization.lua
+
+Utils/Tables.lua
+Utils/Items.lua
+Utils/Timers.lua
+
+Classes/Events.lua
+Classes/Settings.lua
+Classes/ArenaPrep.lua
+Classes/Inventory.lua
+Classes/DeliveryController.lua
+Classes/TradeManager.lua
+Classes/OptionsUI.lua
+sandbox tests (ACP.Tests; run via
+# /run ACP.Tests:run()):
+# Tests/inventory_sandbox.lua
+# Tests/controllery — uncomment to load the inventory sandbox (ACP.Tests):
+# Tests/inventory_sandbox.lua
