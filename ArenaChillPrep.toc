@@ -29,8 +29,7 @@ Classes/Inventory.lua
 Classes/DeliveryController.lua
 Classes/TradeManager.lua
 Classes/OptionsUI.lua
-sandbox tests (ACP.Tests; run via
-# /run ACP.Tests:run()):
+
+# Development only - uncomment to load the sandbox tests:
 # Tests/inventory_sandbox.lua
-# Tests/controllery — uncomment to load the inventory sandbox (ACP.Tests):
-# Tests/inventory_sandbox.lua
+# Tests/controller_sandbox.lua
