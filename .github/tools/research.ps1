@@ -12,6 +12,8 @@
 #   - Case-insensitive by default.
 #   - Results print as: Addon\File:Line: text  (trimmed to -MaxLen chars).
 #   - Use -Context N to include surrounding lines for understanding.
+#   - The AddOns folder comes from the .env variable `addons_path_anniversary`
+#     (see .env.example). Override with -Root if needed.
 
 param(
     [Parameter(Mandatory = $true)]
@@ -21,13 +23,20 @@ param(
     [int]$Context = 0,                # lines of context before/after each match
     [int]$MaxLen = 160,               # trim matched line length
     [int]$MaxResults = 40,            # total matches to report
-    [switch]$SimpleMatch              # treat -Pattern as a literal string
+    [switch]$SimpleMatch,             # treat -Pattern as a literal string
+    [string]$Root = ""                # AddOns folder; default = $env:addons_path_anniversary
 )
 
-$root = "G:\games\World of Warcraft\_anniversary_\Interface\AddOns"
+. (Join-Path $PSScriptRoot "load-env.ps1")
 
-if (-not (Test-Path $root)) {
-    Write-Error "AddOns folder not found: $root"
+if (-not $Root) { $Root = $env:addons_path_anniversary }
+if (-not $Root) {
+    Write-Error "AddOns folder not configured. Set addons_path_anniversary in .env (see .env.example)."
+    exit 1
+}
+
+if (-not (Test-Path $Root)) {
+    Write-Error "AddOns folder not found: $Root"
     exit 1
 }
 

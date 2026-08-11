@@ -3,9 +3,10 @@
 #  script for how to install one, or run it manually after installing.)
 #
 # Usage:  .\syntax-check.ps1 [-Root <addon path>]
+# Default Root = the repo root (this script's parent's parent).
 
 param(
-    [string]$Root = "G:\games\World of Warcraft\_anniversary_\Interface\AddOns\ArenaChillPrep"
+    [string]$Root = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 )
 
 # Locate a Lua 5.1-compatible compiler (luac / luajit prefer -p).

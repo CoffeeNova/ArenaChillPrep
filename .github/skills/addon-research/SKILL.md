@@ -1,13 +1,13 @@
 ---
 name: addon-research
-description: How to research WoW API behavior by reading the working addons installed in this WoW folder (Gargul, sArena_Reloaded, BigDebuffs, WeakAuras, OmniCD, Auctionator, Questie and ~80 others). Use when the wow-api-20506 skill doesn't cover a question, when a call errors unexpectedly, or when you need a proven pattern for a feature (trade, arena, auras, settings, items).
+description: How to research WoW API behavior by reading the working addons installed in the WoW client's AddOns folder (Gargul, sArena_Reloaded, BigDebuffs, WeakAuras, OmniCD, Auctionator, Questie and ~80 others). Use when the wow-api-20506 skill doesn't cover a question, when a call errors unexpectedly, or when you need a proven pattern for a feature (trade, arena, auras, settings, items).
 ---
 
 # Addon research (working addons as ground truth)
 
 ## Why this exists
 
-The VS Code `grep_search` / `file_search` tools do **not index** the WoW folder (`G:\games\World of Warcraft\_anniversary_\Interface\AddOns`). Searching it via the built-in search returns nothing. The reliable way to search the addons is **PowerShell `Select-String`** (see `tools/research.ps1`).
+The VS Code `grep_search` / `file_search` tools do **not index** the WoW AddOns folder (the path comes from the `.env` variable `addons_path_anniversary` — see `.env.example`). Searching it via the built-in search returns nothing. The reliable way to search the addons is **PowerShell `Select-String`** (see `tools/research.ps1`).
 
 Working addons on THIS client are the best documentation: every pattern in this project (trade, arena countdown, aura iteration, settings subcategories, item DBs) was verified by reading them.
 
@@ -31,9 +31,9 @@ Working addons on THIS client are the best documentation: every pattern in this 
    ```powershell
    .\research.ps1 -Pattern "RegisterCanvasLayoutSubcategory" -Context 3
    ```
-   or directly:
+   or directly (replace `<addons>` with the value of `addons_path_anniversary` from `.env`):
    ```powershell
-   Select-String -Path "G:\...\Auctionator\Source\Config\Mixins\PanelConfig.lua" -Pattern "RegisterCanvasLayoutSubcategory" -Context 2,5
+   Select-String -Path "<addons>\Auctionator\Source\Config\Mixins\PanelConfig.lua" -Pattern "RegisterCanvasLayoutSubcategory" -Context 2,5
    ```
 3. **Read a focused slice**: `Get-Content <file> | Select-Object -Skip <start> -First <n>` — read only the function that matters, not the whole file.
 4. **Port WITHOUT libraries**: copy the *pattern*, reimplement dependency-free (no Ace/etc.) using `C_Timer`, `ACP.Utils.Timers`, call-time shims.

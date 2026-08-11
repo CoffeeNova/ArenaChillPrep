@@ -1,7 +1,7 @@
 -- ArenaChillPrep — Utils/Items
 -- Item helpers: container info shim + stack-aware counting and
 -- findItemInBags(itemID, skipSoulbound).
-
+---@class ACP
 ---@type ACP
 local _, ACP = ...;
 
@@ -41,8 +41,8 @@ function Items:getContainerItemInfo(bag, slot)
             return nil;
         end
 
-        return info.iconFileID, info.stackCount, info.isLocked, info.quality, info.isReadable,
-            info.hasLoot, info.hyperlink, info.isFiltered, info.hasNoValue, info.itemID, info.isBound;
+        return info.iconFileID, info.stackCount, info.isLocked, info.quality, info.isReadable, info.hasLoot,
+            info.hyperlink, info.isFiltered, info.hasNoValue, info.itemID, info.isBound;
     end
 
     if (GetContainerItemInfo) then

@@ -4,10 +4,11 @@
 #      (any file may only depend on earlier modules).
 #
 # Usage:  .\vararg-check.ps1 [-Root <addon path>]
+# Default Root = the repo root (this script's parent's parent).
 # Exit code 0 = OK, 1 = problems found.
 
 param(
-    [string]$Root = "G:\games\World of Warcraft\_anniversary_\Interface\AddOns\ArenaChillPrep"
+    [string]$Root = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 )
 
 $failures = 0

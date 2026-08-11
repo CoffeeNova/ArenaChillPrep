@@ -97,6 +97,34 @@ Tests/                        # Unit tests (run OUTSIDE the game under LuaJIT)
 
 ---
 
+## Development environment (where the WoW client lives)
+
+This repo is developed **outside** the game client. The WoW TBC Anniversary client
+with its addons is a separate folder on the machine — it is NOT part of this repo
+and its path must never be hardcoded here.
+
+- The client's AddOns folder is configured in **`.env`** at the repo root
+  (copy `.env.example` → `.env`), variable **`addons_path_anniversary`**,
+  e.g. `addons_path_anniversary=G:\games\World of Warcraft\_anniversary_\Interface\AddOns`.
+- `.env` is git-ignored (machine-specific). `.env.example` documents the variable.
+- Scripts that need the path read it from the environment:
+  - `tools/research.ps1` — searches the working addons (default root = `$env:addons_path_anniversary`, override with `-Root`).
+  - `tools/load-env.ps1` — loads `.env` into the session (dot-source it: `. .\.github\tools\load-env.ps1`).
+  - `tools/deploy.ps1` — deploys the addon to the client (see below).
+- To test in game: run `tools/deploy.ps1` — it copies **only the game artifacts**
+  (the `.toc` + every file it references + `LICENSE`) into `%addons_path_anniversary%\ArenaChillPrep`,
+  keeping the repo clean of client files. The old full-repo copy in the client folder
+  (left over from before the migration) can be deleted — `deploy.ps1` recreates a clean folder.
+
+## Release bundle (CurseForge / CI)
+
+`tools/deploy.ps1 -Bundle` builds a release zip in `dist/` (git-ignored) named
+`<addon>-<version>.zip` (version read from the `.toc`). The zip contains exactly
+the game artifacts — the same file set as a client deploy — so it can be uploaded
+to CurseForge or used by a CI pipeline. `dist/` is never committed.
+
+---
+
 ## Code conventions
 
 - **Lua 5.1**, no external libraries (no Ace — the addon is self-contained).

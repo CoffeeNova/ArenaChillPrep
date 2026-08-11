@@ -23,7 +23,7 @@ Everything an agent needs — project context, architecture, as well as skills, 
 | Skill | When to use |
 |---|---|
 | `wow-api-20506` | Any WoW API call: verified gotchas (crashes/shifted APIs) + working patterns for this client |
-| `addon-research` | Researching API behavior in working addons (workspace search does NOT index the WoW folder) |
+| `addon-research` | Researching API behavior in working addons (workspace search does NOT index the WoW AddOns folder — path from `.env` `addons_path_anniversary`) |
 | `debug-cycle` | Silent failures (no Lua error): debugPrint, TEMP diagnostics, log reading, cleanup |
 | `settings-savedvars` | Settings/`ArenaChillPrepDB`: dot-path get/set, numeric-vs-string keys, migration, rank logic |
 | `phase-workflow` | End-to-end phase/feature workflow (contract-first, todo, verify, document, hand back) |
@@ -44,9 +44,15 @@ Everything an agent needs — project context, architecture, as well as skills, 
 
 ## Tools (`.github/tools/`)
 
-- `research.ps1` — search working addons via PowerShell `Select-String` (workspace search misses the WoW folder).
+- `research.ps1` — search working addons via PowerShell `Select-String` (workspace search misses the WoW AddOns folder; path from `.env` `addons_path_anniversary`).
 - `vararg-check.ps1` — every `.lua` ends with `return ACP;` + TOC load-order check.
 - `syntax-check.ps1` — `luac/luajit -p` syntax check (requires a Lua interpreter; LuaJIT is installed via winget).
+- `load-env.ps1` — loads `.env` (machine-specific paths, e.g. `addons_path_anniversary`) into the session.
+- `deploy.ps1` — copies only the game artifacts (TOC + files it references + LICENSE) to `addons_path_anniversary`, or builds a release zip (`-Bundle`) for CurseForge/CI.
+
+## Local development environment (`.env`)
+
+Machine-specific paths live in `.env` at the repo root (copy `.env.example` → `.env`, fill in the values). The WoW TBC Anniversary client with its addons is NOT part of this repo — it lives wherever `addons_path_anniversary` points (e.g. `G:\games\World of Warcraft\_anniversary_\Interface\AddOns`). Scripts and docs read that variable instead of hardcoding a path.
 
 ## Unit tests (`Tests/`)
 
