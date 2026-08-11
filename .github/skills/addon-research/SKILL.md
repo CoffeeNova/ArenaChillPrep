@@ -51,3 +51,10 @@ Working addons on THIS client are the best documentation: every pattern in this 
 - The `wow-api-20506` skill already answers it → use that.
 - The project's own code already implements it → read the addon's own module first (self-documenting).
 - It's a Lua-language question (not WoW API) → the `lua-refactoring` skill covers style/smells.
+
+## Dead-end rule
+
+- **No addon implements the feature → that is the answer.** If a feature is absent from ALL working addons on this client, the most likely truth is that the client does not allow it (e.g. auto-accept: `AcceptTrade()` is restricted on 2.5.x). Conclude that and report it — do NOT keep searching for a pattern that does not exist.
+- **Never repeat a search.** Keep a mental/session ledger of queries already run ("checked X → empty"). Before any search, check it; if the same query was already run, stop and synthesize instead.
+- **Two failed attempts = stop.** After 2 searches that return nothing useful for the same question, stop researching and present the best conclusion + options to the user.
+- **Identical tool calls in a row = loop signal.** If you are about to call a tool with the same arguments as a previous call in this session, that is a loop — stop and write the answer.

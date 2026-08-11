@@ -1,13 +1,12 @@
 -- ArenaChillPrep — Classes/Settings
 -- SavedVariables wrapper (ArenaChillPrepDB): dot-path get/set.
 -- On load: deep-merge defaults (Data/DefaultSettings.lua) with the saved
--- data, so new keys added in future versions are safe. UI comes in Phase 5.
+-- data, so new keys added in future versions are safe.
 
 ---@type ACP
 local _, ACP = ...;
 
 local pairs = _G.pairs;
-local tinsert = _G.tinsert;
 
 ---@class Settings
 local Settings = {
@@ -146,17 +145,6 @@ function Settings:set(path, value)
     end
 
     current[segments[#segments]] = value;
-end
-
---- Dump every setting for diagnostics (pairs on the root).
-function Settings:dump()
-    local out = {};
-
-    for key, value in pairs(self.Data) do
-        tinsert(out, ("%s=%s"):format(tostring(key), tostring(value)));
-    end
-
-    return table.concat(out, ", ");
 end
 
 return ACP;

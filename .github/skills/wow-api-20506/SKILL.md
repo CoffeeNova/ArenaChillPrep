@@ -11,6 +11,8 @@ description: Verified knowledge base for the WoW TBC Anniversary client (Interfa
 
 If a WoW API call errors or returns nonsense on this client, **check this list first**, then look at a **working addon** (see the `addon-research` skill) before inventing a workaround. Almost every "impossible" bug in this project was already solved by Gargul / sArena_Reloaded / BigDebuffs / WeakAuras / OmniCD / Auctionator running on the same client.
 
+**But absence is evidence too** if NO working addon implements a feature, the honest conclusion is usually that the client does not allow it (e.g. auto-accept — `AcceptTrade()` is restricted on 2.5.x, `C_SecureTransfer` does not exist). Do NOT keep searching for a pattern that does not exist; conclude "impossible on this client" and report it. Never repeat the same search query in one session — after 2 failed attempts, stop and synthesize.
+
 ## Verified gotchas (all confirmed live in this project)
 
 | API | What happens | Working alternative |
@@ -53,7 +55,8 @@ getRemainingTime() = countdownEndTime - GetTime();
 - **One item per tick** (FIFO queue + repeating ticker, ~0.15 s) — adding too fast makes the game silently remove items.
 - `ITEM_UNLOCKED` → re-queue items the game removed within 0.5 s (keyed by GUID).
 - Completion: `UI_INFO_MESSAGE` == `ERR_TRADE_COMPLETE` (SECOND arg). `TRADE_CLOSED` alone means failure — delay the verdict ~1 s so the completion message arrives first.
-- Auto-accept: click `TradeFrameTradeButton:Click("LeftButton")` only when `button:IsEnabled()` (i.e. after items are placed).
+- **`C_Timer` handle `Cancel()` is UNRELIABLE on 2.5.x — a "cancelled" timer can still fire.** Verified live 2026-08-10: a cancelled `TradeOpen` timer fired after `TRADE_SHOW` (false "window did not open" timeout killed a live trade; the partner attribution was lost → repeat trades), and a cancelled poll ticker kept re-trading with no backoff. AceTimer-3.0 (what Gargul runs on the same client) never relies on `Cancel()` — its callback checks a `cancelled` flag. Pattern: each named timer stores an entry `{active = true, handle}`; `cancel()` sets `active = false` and removes the entry; the C_Timer callback bails unless `entry.active` AND the entry is still the one registered under the name (`Handles[name] == entry`). `handle:Cancel()` is best-effort only. See `Utils/Timers.lua`.
+- **Auto-accept is IMPOSSIBLE on 2.5.x — do not implement it.** Verified: the Trade button's XML is `<OnClick function="AcceptTrade"/>`, and `AcceptTrade()` is **RESTRICTED (requires a hardware event)** on the 2.5.6 bcc anniversary client. A programmatic `AcceptTrade()` call OR `TradeFrameTradeButton:Click("LeftButton")` is silently blocked by the client (live log: `Interface action failed because of an AddOn`). `C_SecureTransfer.AcceptTrade()` (the non-restricted retail equivalent) does NOT exist on 2.5.x. The player must confirm the trade manually; the addon only places the items.
 - Cursor hygiene: `ClearCursor()` on `TRADE_CLOSED`.
 
 ### Container API (call-time shims — resolve at call time so sandbox tests can stub)

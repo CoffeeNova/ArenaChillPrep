@@ -1,5 +1,5 @@
 -- ArenaChillPrep — Tests/inventory_sandbox.lua
--- In-game sandbox for Phase 2: verifies stack-aware item counting and
+-- In-game sandbox: verifies stack-aware item counting and
 -- findItemInBags WITHOUT touching real bags.
 --
 -- Usage: uncomment `Tests/inventory_sandbox.lua` in ArenaChillPrep.toc and

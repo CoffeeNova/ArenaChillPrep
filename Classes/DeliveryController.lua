@@ -16,6 +16,7 @@
 local _, ACP = ...;
 
 local pairs = _G.pairs;
+local TradeFrame = _G.TradeFrame;
 local UnitExists = _G.UnitExists;
 local UnitIsUnit = _G.UnitIsUnit;
 local UnitAffectingCombat = _G.UnitAffectingCombat;
@@ -62,6 +63,30 @@ function DeliveryController:reset()
     self:setState("IDLE");
 end
 
+--- Whether the bracket is enabled in Settings; logs a message when disabled.
+---@param bracket string
+---@return boolean
+function DeliveryController:bracketEnabled(bracket)
+    if (ACP.Settings:get("brackets." .. bracket)) then
+        return true;
+    end
+
+    ACP:debugPrint("bracket %s disabled, skipping (enable it in settings)", bracket);
+    return false;
+end
+
+--- Number of partners already served this prep (drives the DONE decision).
+---@return number
+function DeliveryController:givenCount()
+    local count = 0;
+
+    for _ in pairs(self.givenTo) do
+        count = count + 1;
+    end
+
+    return count;
+end
+
 --- The set of item categories the current class can pass (from the catalog).
 ---@return table
 function DeliveryController:getCategories()
@@ -80,41 +105,30 @@ end
 function DeliveryController:categoryReady(category, setting)
     local needed = setting.count or 1;
     local catalog = ACP.Data.Items[category] or {};
-    local readyByRank = {}; -- rank -> boolean
+    local countByRank = {}; -- rank -> number (sum of counts of selected IDs)
 
+    -- One pass over the selected ranks; paired IDs of one rank share the sum.
     for itemID, enabled in pairs(setting.ranks or {}) do
         if (enabled) then
             local record = catalog[itemID];
 
             if (record) then
                 local rank = record.rank;
-
-                if (not readyByRank[rank]) then
-                    local rankCount = 0;
-
-                    -- Sum counts of ALL selected IDs of this rank.
-                    for id, en in pairs(setting.ranks or {}) do
-                        if (en and catalog[id] and catalog[id].rank == rank) then
-                            rankCount = rankCount + ACP.Inventory:getCount(id);
-                        end
-                    end
-
-                    ACP:debugPrint("itemsReady: category=%s rank=%d count=%d needed=%d",
-                        category, rank, rankCount, needed);
-
-                    readyByRank[rank] = rankCount >= needed;
-                end
+                countByRank[rank] = (countByRank[rank] or 0) + ACP.Inventory:getCount(itemID);
             end
         end
     end
 
-    -- Every selected rank must be ready (no false entries).
+    -- Every selected rank must reach `needed`.
     local anySelected = false;
 
-    for _, ready in pairs(readyByRank) do
+    for rank, rankCount in pairs(countByRank) do
         anySelected = true;
 
-        if (not ready) then
+        ACP:debugPrint("itemsReady: category=%s rank=%d count=%d needed=%d",
+            category, rank, rankCount, needed);
+
+        if (rankCount < needed) then
             return false;
         end
     end
@@ -152,8 +166,7 @@ end
 --- party1..partyN, so no manual slot is needed.
 ---@return string|nil
 function DeliveryController:findPartner()
-    local getNumPartyMembers = _G.GetNumPartyMembers or _G.GetNumSubgroupMembers;
-    local count = (getNumPartyMembers and getNumPartyMembers()) or 0;
+    local count = ACP.ArenaPrep:getPartySize();
 
     for i = 1, count do
         local unit = "party" .. i;
@@ -192,11 +205,12 @@ function DeliveryController:canStartTrade()
     end
 
     -- Gate safety: never start a trade too close to the gates opening.
+    local gateSafety = ACP.Settings:get("gateSafetySeconds") or 15;
     local remaining = ACP.ArenaPrep:getRemainingTime();
 
-    if (remaining ~= nil and remaining < (ACP.Settings:get("gateSafetySeconds") or 15)) then
-        ACP:print("skipping trade: %0.1f s left, below gateSafetySeconds (%s)",
-            remaining, tostring(ACP.Settings:get("gateSafetySeconds") or 15));
+    if (remaining ~= nil and remaining < gateSafety) then
+        ACP:debugPrint("skipping trade: %0.1f s left, below gateSafetySeconds (%s)",
+            remaining, tostring(gateSafety));
         return false;
     end
 
@@ -211,13 +225,19 @@ function DeliveryController:checkReady()
         return;
     end
 
+    -- Pile-up guard: never schedule a new attempt while one is already
+    -- pending (a trade is scheduled or a retry is backing off). Applies to
+    -- EVERY caller — the poll ticker, ACP_ITEMS_CHANGED, roster updates.
+    if (ACP.Utils.Timers.Handles["TradeDelay"] or ACP.Utils.Timers.Handles["TradeRetry"]) then
+        return;
+    end
+
     -- Bracket gate is enforced here too (the bracket may resolve later than
     -- the buff gain — see onBuffGained). If it resolves to a disabled bracket,
     -- drop out of ACTIVE entirely.
     local bracket = ACP.ArenaPrep:getBracket();
 
-    if (bracket and not ACP.Settings:get("brackets." .. bracket)) then
-        ACP:print("bracket %s disabled, skipping (enable it in settings)", bracket);
+    if (bracket and not self:bracketEnabled(bracket)) then
         self:setState("IDLE");
         return;
     end
@@ -233,24 +253,20 @@ function DeliveryController:checkReady()
     local partner = self:findPartner();
 
     if (not partner) then
-        local givenCount = 0;
+        local served = self:givenCount();
 
-        for _ in pairs(self.givenTo) do
-            givenCount = givenCount + 1;
-        end
-
-        if (givenCount > 0) then
-            ACP:debugPrint("no eligible partner (givenTo: %d)", givenCount);
+        if (served > 0) then
+            ACP:debugPrint("no eligible partner (givenTo: %d)", served);
             self:setState("DONE");
         else
-            ACP:print("items ready but no partner found (are you in a group?)");
+            ACP:debugPrint("items ready but no partner found (are you in a group?)");
         end
 
         return;
     end
 
     local tradeDelay = ACP.Settings:get("tradeDelay") or 1.5;
-    ACP:print("scheduling trade with %s in %.1f s", partner, tradeDelay);
+    ACP:debugPrint("scheduling trade with %s in %.1f s", partner, tradeDelay);
 
     ACP.Utils.Timers:after("TradeDelay", tradeDelay, function()
         -- Re-check before actually sending the request.
@@ -279,6 +295,13 @@ function DeliveryController:checkReady()
                 return; -- already resolved (window opened / trade completed)
             end
 
+            -- Defense in depth: even if this timer was NOT cancelled (a stale
+            -- C_Timer firing after cancel — see Utils/Timers), never cancel a
+            -- trade whose window is actually up.
+            if (TradeFrame and TradeFrame:IsShown()) then
+                return;
+            end
+
             ACP:debugPrint("trade window did not open within %.1f s", ACP.Data.Constants.TRADE_OPEN_TIMEOUT);
             ACP.TradeManager:cancel();
             self:onTradeFailed("timeout");
@@ -292,14 +315,10 @@ end
 --- once a trade is scheduled/started it stops polling.
 function DeliveryController:startCheckTicker()
     ACP.Utils.Timers:interval("DeliveryCheck", 0.5, function()
-        -- Only poll while ACTIVE and nothing pending.
+        -- Only poll while ACTIVE; checkReady enforces the pending-timer guards.
         if (self.state ~= "ACTIVE") then
             ACP.Utils.Timers:cancel("DeliveryCheck");
             return;
-        end
-
-        if (ACP.Utils.Timers.Handles["TradeDelay"]) then
-            return; -- a trade is already scheduled, wait for it
         end
 
         self:checkReady();
@@ -320,8 +339,7 @@ function DeliveryController:onBuffGained()
         return;
     end
 
-    if (not ACP.Settings:get("brackets." .. bracket)) then
-        ACP:print("bracket %s disabled, skipping (enable it in settings)", bracket);
+    if (not self:bracketEnabled(bracket)) then
         self:setState("IDLE");
         return;
     end
@@ -352,18 +370,32 @@ end
 --- goes to the next partner (3v3/5v5). Only when every partner has been
 --- served does it go DONE.
 function DeliveryController:onTradeCompleted()
+    -- Normalize the partner to a party unit token before recording it in
+    -- `givenTo`: auto-trades carry the token (currentPartner), but a MANUAL
+    -- trade records the player NAME (TradeManager.partnerUnit set on
+    -- TRADE_SHOW). Recording a name would leave the token unmarked and the
+    -- controller would offer the same teammate again.
     local partner = self.currentPartner or ACP.TradeManager.partnerUnit;
+
+    if (partner and not partner:match("^party%d+$")) then
+        partner = ACP.ArenaPrep:findPartyUnitByName(partner) or partner;
+    end
+
+    if (not partner) then
+        partner = ACP.ArenaPrep:findPartyUnitByName(UnitName("NPC", true));
+    end
 
     if (partner) then
         self.givenTo[partner] = true;
-        ACP:print("handed items to %s", partner);
+        ACP:debugPrint("handed items to %s", partner);
     end
 
     self.currentPartner = nil;
     self.retryCount = 0;
 
-    -- The buff may have faded while the window was open (gates opened, e.g.
-    -- with autoAccept off). A completion after that must not resume trading.
+    -- The buff may have faded while the window was open (gates opened while
+    -- the player was still confirming the trade manually). A completion after
+    -- that must not resume trading.
     if (not ACP.ArenaPrep:isActive()) then
         self:setState("IDLE");
         return;
@@ -409,14 +441,11 @@ function DeliveryController:onTradeFailed(reason)
 end
 
 --- PLAYER_REGEN_DISABLED: combat cancels pending attempts; an already-open
---- window is left untouched.
+--- window is left untouched. The state is NOT changed — the combat flag clears
+--- on PLAYER_REGEN_ENABLED and the retry resumes from the same state.
 function DeliveryController:onCombatStart()
     ACP.Utils.Timers:cancel("TradeDelay");
     ACP.Utils.Timers:cancel("TradeRetry");
-
-    if (self.state ~= "TRADING") then
-        self:setState("ACTIVE");
-    end
 end
 
 --- PLAYER_REGEN_ENABLED: combat over — retry if the buff is still active.

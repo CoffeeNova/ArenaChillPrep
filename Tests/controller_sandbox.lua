@@ -1,5 +1,5 @@
 -- ArenaChillPrep — Tests/controller_sandbox.lua
--- In-game sandbox for Phase 6: verifies the DeliveryController's DECISION
+-- In-game sandbox: verifies the DeliveryController's DECISION
 -- logic without touching real bags, groups or trade windows:
 --   - bracket gate (default 2v2 only vs 3v3; enabling 3v3 starts trading)
 --   - givenTo: 2v2 — one trade per prep; 3v3 — the second batch goes to the

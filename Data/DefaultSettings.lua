@@ -1,6 +1,6 @@
 -- ArenaChillPrep — Data/DefaultSettings
 -- Default SavedVariables structure (ArenaChillPrepDB). Deep-merged with the
--- saved data on load (Phase 5), so new keys added in future versions are safe.
+-- saved data on load, so new keys added in future versions are safe.
 
 ---@type ACP
 local _, ACP = ...;
@@ -10,7 +10,6 @@ ACP.Data = ACP.Data or {};
 ---@class DefaultSettings
 ACP.Data.DefaultSettings = {
     enabled = true,               -- Master switch.
-    autoAccept = false,           -- Auto-click "Trade" after placing items.
     tradeDelay = 1.5,             -- Seconds between the item appearing and opening the trade.
     gateSafetySeconds = 15,       -- Stop all trading N seconds before the gates open.
     brackets = {                  -- Which arena brackets auto-trade is active in.

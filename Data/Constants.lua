@@ -17,9 +17,8 @@ ACP.Data.Constants = {
     ARENA_PREP_SECONDS = 60,
 
     -- Localized arena countdown messages (CHAT_MSG_BG_SYSTEM_NEUTRAL) mapped
-    -- to seconds until the gates open. Verified working list from
-    -- ArenaAnalytics (same client). enUS + ruRU — the locales we support;
-    -- extend from ArenaAnalytics' proven map for more locales if needed.
+    -- to seconds until the gates open. Verified working list on 2.5.5.
+    -- enUS + ruRU — the locales we support; extend for more locales if needed.
     ARENA_COUNTDOWN_MESSAGES = {
         -- English (enUS / default)
         ["One minute until the Arena battle begins!"] = 60,
@@ -48,9 +47,6 @@ ACP.Data.Constants = {
 
     -- Retry backoff schedule, in seconds (index 1..MAX_TRADE_RETRIES).
     RETRY_BACKOFF = { 2, 4, 8 },
-
-    -- Number of trade slots in TBC (TRADE_PLAYER_ITEM_1..6).
-    MAX_TRADABLE_ITEMS = 6,
 
     -- Arena bracket by party size inside the arena (group is locked once inside).
     BRACKET_BY_SIZE = {

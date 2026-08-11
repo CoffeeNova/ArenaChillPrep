@@ -1,6 +1,5 @@
 -- ArenaChillPrep — Classes/TradeManager
--- Low-level trade window automation (dependency-free port of the patterns
--- proven in Gargul's Classes/TradeWindow.lua on the same client).
+-- Low-level trade window automation (dependency-free).
 --
 -- Flow:
 --   startTrade(unit) -> InitiateTrade
@@ -8,12 +7,15 @@
 --   placement        -> one item per tick: findItemInBags (skip soulbound)
 --                       -> UseContainerItem (auto-places into the next slot)
 --   ITEM_UNLOCKED    -> re-queue items the game removed (< 0.5 s)
---   autoAccept       -> TRADE_ACCEPT_UPDATE + TradeFrameTradeButton:Click()
 --   completion       -> UI_INFO_MESSAGE == ERR_TRADE_COMPLETE -> ACP_TRADE_COMPLETED
 --   TRADE_CLOSED     -> ClearCursor(); failure verdict after 0.5 s if no
 --                       completion -> ACP_TRADE_FAILED(reason)
 -- Retries with backoff (2/4/8 s, max MAX_TRADE_RETRIES) are driven by the
 -- DeliveryController (state machine), not here.
+--
+-- NOTE: there is NO auto-accept. AcceptTrade() is restricted on 2.5.x
+-- (requires a hardware event) — a programmatic call or button:Click() is
+-- silently blocked by the client. The player confirms the trade manually.
 
 ---@type ACP
 local _, ACP = ...;
@@ -42,9 +44,6 @@ local TradeManager = {
 
     ---@type table<string, {itemLink: string|nil, itemID: number, timestamp: number}>
     ItemsAdded = {},
-
-    ---@type boolean
-    autoAcceptPending = false,
 };
 
 ---@type TradeManager
@@ -61,7 +60,6 @@ function TradeManager:startTrade(unit)
     self.trading = true;
     self.partnerUnit = unit;
     self.tradeCompleted = false;
-    self.autoAcceptPending = false;
     self.ItemsToAdd = {};
     self.ItemsAdded = {};
 
@@ -69,18 +67,6 @@ function TradeManager:startTrade(unit)
     ACP.Events:fire("ACP_TRADE_START", unit);
 
     InitiateTrade(unit);
-end
-
---- Queue an item (by ID) to be placed into the open trade window.
----@param itemID number
-function TradeManager:queueItem(itemID)
-    tinsert(self.ItemsToAdd, itemID);
-end
-
---- Whether a trade window is currently open / being processed.
----@return boolean
-function TradeManager:isTrading()
-    return self.trading;
 end
 
 --- Reset the low-level trade state. Called by the DeliveryController when the
@@ -95,17 +81,15 @@ function TradeManager:cancel()
     self.trading = false;
     self.partnerUnit = nil;
     self.tradeCompleted = false;
-    self.autoAcceptPending = false;
     self.ItemsToAdd = {};
     self.ItemsAdded = {};
     ACP.Utils.Timers:cancel("TradeItemQueue");
-    ACP.Utils.Timers:cancel("TradeAutoAccept");
     ClearCursor();
 end
 
 --- Resolve an item's GUID by bag/slot. On 2.5.5 C_Item.GetItemGUID takes an
---- ItemLocation, not (bag, slot) — create the location first (Gargul does the
---- same). Returns nil if the item doesn't exist or the location is incomplete
+--- ItemLocation, not (bag, slot) — create the location first. Returns nil if
+--- the item doesn't exist or the location is incomplete
 --- (ITEM_UNLOCKED can arrive with a bag-only reference).
 ---@param bag number
 ---@param slot number
@@ -147,7 +131,7 @@ function TradeManager:processItemQueue()
     end
 
     local itemGUID = self:getItemGUID(bag, slot);
-    local _, _, _, _, _, _, itemLink = ACP.Utils.Items:getContainerItemInfo(bag, slot);
+    local _, _, _, itemLink = ACP.Utils.Items:getItemData(bag, slot);
 
     if (itemGUID) then
         self.ItemsAdded[itemGUID] = {
@@ -162,50 +146,6 @@ function TradeManager:processItemQueue()
     -- UseContainerItem with the window open auto-places into the next slot.
     local useContainerItem = _G.UseContainerItem or (C_Container and C_Container.UseContainerItem);
     useContainerItem(bag, slot);
-
-    -- All queued items placed (for now) — give the game a moment, then
-    -- auto-accept if enabled.
-    if (#self.ItemsToAdd == 0) then
-        self:tryAutoAccept();
-    end
-end
-
---- Attempt to click the "Trade" button if auto-accept is enabled and the
---- button is actually clickable (items may still be being added).
-function TradeManager:tryAutoAccept()
-    if (not self.trading or not TradeFrame:IsShown()) then
-        return;
-    end
-
-    if (not ACP.Settings:get("autoAccept")) then
-        return;
-    end
-
-    if (self.autoAcceptPending) then
-        return;
-    end
-
-    local button = TradeFrameTradeButton;
-
-    if (not button or not button:IsEnabled()) then
-        ACP:debugPrint("auto-accept skipped (trade button disabled)");
-        return;
-    end
-
-    self.autoAcceptPending = true;
-
-    ACP.Utils.Timers:after("TradeAutoAccept", 0.6, function()
-        self.autoAcceptPending = false;
-
-        if (not self.trading or not TradeFrame:IsShown()) then
-            return;
-        end
-
-        if (button:IsEnabled()) then
-            ACP:debugPrint("auto-accepting trade");
-            button:Click("LeftButton");
-        end
-    end);
 end
 
 --- Start the FIFO placement ticker (one item per tick).
@@ -236,34 +176,25 @@ function TradeManager:_init()
 
         -- Only auto-place if WE initiated this trade.
         if (self.trading) then
-            -- Tell the controller the window is up so it cancels its
-            -- one-shot open timeout (TRADE_OPEN_TIMEOUT).
+            -- Cancel the one-shot open timeout directly AND via the event
+            -- (belt and suspenders — never let a stale timer kill a live
+            -- trade).
+            ACP.Utils.Timers:cancel("TradeOpen");
             ACP.Events:fire("ACP_TRADE_OPENED", self.partnerUnit);
 
             self:queueConfiguredItems();
             self:startItemQueue();
-
-            if (#self.ItemsToAdd == 0) then
-                -- Nothing to place — auto-accept right away if enabled.
-                self:tryAutoAccept();
-            end
         end
     end);
 
     -- Trade completed successfully. UI_INFO_MESSAGE on 2.5.5 delivers the
-    -- message as the SECOND argument (Gargul reads _, message — same client).
+    -- message as the SECOND argument.
     ACP.Events:register("TradeManager.UI_INFO_MESSAGE", "UI_INFO_MESSAGE", function(_, message)
         if (message == ERR_TRADE_COMPLETE) then
             self.tradeCompleted = true;
             ACP:debugPrint("trade completed");
             ACP.Events:fire("ACP_TRADE_COMPLETED");
         end
-    end);
-
-    -- Trade accepted states: auto-accept (extra trigger; the main one is after
-    -- items are placed — see tryAutoAccept).
-    ACP.Events:register("TradeManager.TRADE_ACCEPT_UPDATE", "TRADE_ACCEPT_UPDATE", function()
-        self:tryAutoAccept();
     end);
 
     -- Window closed: success arrives as UI_INFO_MESSAGE shortly after, so
@@ -276,9 +207,7 @@ function TradeManager:_init()
         end
 
         self.trading = false;
-        self.autoAcceptPending = false;
         ACP.Utils.Timers:cancel("TradeItemQueue");
-        ACP.Utils.Timers:cancel("TradeAutoAccept");
         self.ItemsToAdd = {};
         self.ItemsAdded = {};
         ClearCursor();
@@ -362,7 +291,7 @@ function TradeManager:queueConfiguredItems()
     end
 
     if (#self.ItemsToAdd > 0) then
-        ACP:print("placing %d item(s) into the trade window", #self.ItemsToAdd);
+        ACP:debugPrint("placing %d item(s) into the trade window", #self.ItemsToAdd);
     end
 end
 

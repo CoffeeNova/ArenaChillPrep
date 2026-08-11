@@ -1,12 +1,11 @@
 -- ArenaChillPrep — Utils/Tables
--- Basic table helpers: deep merge (for SavedVariables + defaults), shallow
--- copy, membership check.
+-- Basic table helpers: deep merge (for SavedVariables + defaults) and
+-- shallow copy.
 
 ---@type ACP
 local _, ACP = ...;
 
 local pairs = _G.pairs;
-local ipairs = _G.ipairs;
 local type = _G.type;
 
 ---@class Tables
@@ -40,20 +39,6 @@ function Tables:shallowCopy(source)
     end
 
     return copy;
-end
-
---- Whether `value` is present in the array `list`.
----@param list table
----@param value any
----@return boolean
-function Tables:contains(list, value)
-    for _, item in ipairs(list or {}) do
-        if (item == value) then
-            return true;
-        end
-    end
-
-    return false;
 end
 
 ACP.Utils = ACP.Utils or {};

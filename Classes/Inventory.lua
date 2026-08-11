@@ -6,8 +6,7 @@
 -- (from ACP.Data.Items.classItems). On BAG_UPDATE / BAG_UPDATE_DELAYED the
 -- counts are refreshed and ACP_ITEMS_CHANGED fires for any tracked item
 -- whose count changed.
--- findItem delegates to Utils/Items.findItemInBags (port of Gargul's
--- GL:findBagIdAndSlotForItem, simplified).
+-- findItem delegates to Utils/Items.findItemInBags (simplified).
 
 ---@type ACP
 local _, ACP = ...;
@@ -84,7 +83,7 @@ function Inventory:countItem(itemID)
         local numSlots = ACP.Utils.Items:getContainerNumSlots(bag);
 
         for slot = 1, numSlots do
-            local _, stackCount, _, _, _, _, _, _, _, bagItemID = ACP.Utils.Items:getContainerItemInfo(bag, slot);
+            local bagItemID, stackCount = ACP.Utils.Items:getItemData(bag, slot);
 
             if (bagItemID == itemID) then
                 count = count + (stackCount or 1);

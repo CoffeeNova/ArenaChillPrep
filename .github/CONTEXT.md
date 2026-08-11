@@ -16,7 +16,7 @@ While the arena preparation buff is active, the addon will:
 3. **Scan the bags** for the required items and count them (stack-aware).
 4. **As soon as the required amount of items appears in the bags** (or was already there when preparation started) — **automatically open the trade window** with the partner.
 5. **Place the items into the trade slots** (up to `MAX_TRADABLE_ITEMS` per trade).
-6. **Optionally auto-accept the trade** (`autoAccept` setting).
+6. **The player confirms the trade manually.** There is no auto-accept: `AcceptTrade()` is restricted on 2.5.x (requires a hardware event), so a programmatic call or `button:Click()` is silently blocked by the client. The addon places the items; the player clicks "Trade".
 7. **Remembers which partners already received items** this prep — never trades with the same player twice.
 8. **Stops trading N seconds before the gates open** (`gateSafetySeconds`, default 15).
 
@@ -104,7 +104,7 @@ ArenaChillPrep/
 7. **Item placement.** Use `UseContainerItem(bag, slot)` while the trade window is open — the game auto-places the item into the next available trade slot. No `PickupContainerItem` + `ClickTradeButton` needed.
 8. **Place items one at a time.** The game can silently remove items added to the trade window too rapidly. Use a FIFO queue processed by a short repeating ticker, plus an `ITEM_UNLOCKED` re-add for the rare cases where the game still removes an item (added < 0.5 s ago).
 9. **Completion detection.** A trade completes when `UI_INFO_MESSAGE` fires with `ERR_TRADE_COMPLETE`. `TRADE_CLOSED` fires before the completion message, so on its own it means failure, not success.
-10. **Timers without Ace.** `C_Timer.After` / `C_Timer.NewTicker` are available on TBC Anniversary (20506) — use them (via a small named-timer helper) instead of Ace timers.
+10. **Timers without Ace.** `C_Timer.After` / `C_Timer.NewTicker` are available on TBC Anniversary (20506) — use them (via a small named-timer helper) instead of Ace timers. **Verified 2026-08-10: a C_Timer handle's `Cancel()` is UNRELIABLE on this client — a "cancelled" timer can still fire.** A cancelled `TradeOpen` timer fired after `TRADE_SHOW` (false "window did not open" timeout that cancelled a live trade and lost the partner attribution → repeat trades) and a cancelled poll ticker kept re-trading with no backoff. Fix pattern (AceTimer's — see `Utils/Timers.lua`): each named timer stores `{active = true, handle}`; `cancel()` flags it inactive and removes it; the C_Timer callback bails unless `active` and the entry is still the one registered under the name. `handle:Cancel()` is best-effort only. Always guard timeouts by checking the real state (e.g. `TradeFrame:IsShown()`) before acting.
 11. **Bracket detection.** An addon **can** determine the bracket. Primary signal: your party size in the arena — in TBC you must queue with a group of exactly the bracket size, so `GetNumPartyMembers() + 1` is `2`, `3` or `5` (and the group is locked once inside, so it's stable during prep). Cross-check when available (client ≥ 2.5.1): `GetNumArenaOpponents() + 1` — number of opponents (1/2/4); it may return `0` briefly at arena load, hence the fallback. Note: the API is `GetNumPartyMembers` in TBC — `GetNumSubgroupMembers` only exists from 5.0.4+.
 12. **Gate-open countdown — use `CHAT_MSG_BG_SYSTEM_NEUTRAL`, not the aura.** Verified on 2.5.5: the prep buff's aura reports `duration=0` / `expirationTime=0` (treated as infinite), so `expirationTime - GetTime()` is useless. The working approach — proven by ArenaAnalytics and sArena_Reloaded on the same client — is listening to `CHAT_MSG_BG_SYSTEM_NEUTRAL` and matching the localized countdown messages ("One minute until the Arena battle begins!" = 60, "Thirty seconds..." = 30, "Fifteen seconds..." = 15, "The Arena battle has begun!" = 0; the map lives in `ACP.Data.Constants.ARENA_COUNTDOWN_MESSAGES`). Track `countdownEndTime = GetTime() + N`, seeded with `+60 s` on buff gain as a fallback. `GetBattlefieldTimeRemaining()` is a battleground match timer, not the pre-gate countdown.
 13. **One trade per partner, not per prep.** The addon keeps a runtime `givenTo` set (reset on `ACP_BUFF_LOST`) of partners who already received items and never re-trades with them. In 2v2 this means one trade per prep; in 3v3/5v5 a newly crafted item goes to the next eligible partner. `givenTo` is runtime-only — never persist it to `ArenaChillPrepDB`.
@@ -142,7 +142,6 @@ ArenaChillPrepDB = {
     enabled        = true,   -- master switch
     partnerMode    = "auto", -- "auto" | "party1" (explicit party slot)
     manualPartner  = "party1",
-    autoAccept     = false,  -- auto-click "Trade" after placing items
     tradeDelay     = 1.5,    -- seconds between item appearing and opening the trade
     gateSafetySeconds = 15,  -- stop all trading N seconds before the gates open
     brackets = {             -- which arena brackets auto-trade is active in

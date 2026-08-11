@@ -1,15 +1,13 @@
 -- ArenaChillPrep — Data/Items
--- Static item catalog + class → items mapping. v0.1: Warlock → healthstones only.
--- Future categories (v0.2+): food, water, totems, ...
+-- Static item catalog + class → items mapping. Currently: Warlock →
+-- healthstones only. Future categories: food, water, totems, ...
 --
--- Healthstone IDs (verified from Questie classic/TBC item DB, the client you
--- play): each rank has a PAIR of IDs — historical duplicates. Both IDs of a
+-- Healthstone IDs (verified against the TBC item database): each rank has a
+-- PAIR of IDs — historical duplicates. Both IDs of a
 -- rank must be tracked (a player may hold either).
 
 ---@type ACP
 local _, ACP = ...;
-
-local tinsert = _G.tinsert;
 
 -- CLASS_WARLOCK is NOT defined as a global on TBC Anniversary FrameXML
 -- (retail-only constant). Guard it so the classItems table keys never go nil.
@@ -47,25 +45,5 @@ ACP.Data.Items = {
         -- [CLASS_MAGE]   = { "food", "water" },
     },
 };
-
---- Flattened list of item records the given class can pass.
----@param classID number
----@return table<number, table>
-function ACP.Data.Items:getForClass(classID)
-    local items = {};
-    local categories = self.classItems[classID];
-
-    if (not categories) then
-        return items;
-    end
-
-    for _, category in ipairs(categories) do
-        for _, item in pairs(self[category] or {}) do
-            tinsert(items, item);
-        end
-    end
-
-    return items;
-end
 
 return ACP;

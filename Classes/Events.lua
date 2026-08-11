@@ -1,5 +1,5 @@
 -- ArenaChillPrep — Classes/Events
--- Minimal event bus (simplified Gargul pattern). The addon's frame dispatches
+-- Minimal event bus. The addon's frame dispatches
 -- raw game events to subscribers; modules use fire() for internal events
 -- (ACP_BUFF_GAINED, ACP_ITEMS_CHANGED, ACP_TRADE_*, ...).
 

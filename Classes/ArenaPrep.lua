@@ -3,7 +3,7 @@
 -- right now? Plus: which bracket are we in, and how long until the gates open.
 --
 -- Buff lookup (verified on 2.5.5): C_UnitAuras.GetPlayerAuraBySpellID(32727)
--- returns an aura object (sArena_Reloaded uses exactly this). Do NOT use
+-- returns an aura object. Do NOT use
 -- UnitBuff("player", name) — crashes on 2.5.5 (deprecated wrapper proxies to
 -- C_UnitAuras.GetBuffDataByIndex which only accepts a numeric index) — nor
 -- UnitAura(unit, i, filter), which returns shifted legacy positions with no
@@ -51,7 +51,7 @@ function ArenaPrep:scanBuff()
     local spellID = ACP.Data.Constants.ARENA_PREP_SPELL_ID;
     local unit = "player";
 
-    -- Primary: direct lookup by spellID (sArena_Reloaded's approach).
+    -- Primary: direct lookup by spellID.
     if (GetPlayerAuraBySpellID) then
         local aura = GetPlayerAuraBySpellID(spellID);
 
@@ -186,6 +186,39 @@ function ArenaPrep:getInstanceType()
     return instanceType or "none";
 end
 
+--- Current number of party members (0 when solo or the API is unavailable).
+--- TBC-era name: GetNumPartyMembers; GetNumSubgroupMembers only exists from
+--- 5.0.4+. Shared by bracket detection, partner detection and /acp status.
+---@return number
+function ArenaPrep:getPartySize()
+    local getNumPartyMembers = _G.GetNumPartyMembers or _G.GetNumSubgroupMembers;
+
+    return (getNumPartyMembers and getNumPartyMembers()) or 0;
+end
+
+--- Resolve a player name to a party unit token ("party1".."partyN").
+--- Used to normalize a partner recorded by name (manual trades) back to the
+--- token the controller keys `givenTo` by.
+---@param name string|nil
+---@return string|nil
+function ArenaPrep:findPartyUnitByName(name)
+    if (not name) then
+        return nil;
+    end
+
+    local count = self:getPartySize();
+
+    for i = 1, count do
+        local unit = "party" .. i;
+
+        if (UnitName(unit) == name) then
+            return unit;
+        end
+    end
+
+    return nil;
+end
+
 --- Determine the arena bracket from the party size (source of truth — the
 --- group is locked once inside the arena), cross-checked with
 --- GetNumArenaOpponents when available (2.5.1+, present on 20506).
@@ -195,9 +228,7 @@ function ArenaPrep:computeBracket()
         return nil;
     end
 
-    -- TBC-era name; GetNumSubgroupMembers only exists from 5.0.4+.
-    local getNumPartyMembers = _G.GetNumPartyMembers or _G.GetNumSubgroupMembers;
-    local partySize = (getNumPartyMembers and getNumPartyMembers() or 0) + 1;
+    local partySize = self:getPartySize() + 1;
 
     local bracket = ACP.Data.Constants.BRACKET_BY_SIZE[partySize];
 

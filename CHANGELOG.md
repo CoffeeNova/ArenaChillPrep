@@ -11,7 +11,7 @@ Initial release — Warlock only (Healthstones of all ranks), auto-trade during 
 - **Bracket detection:** party size inside the arena (`2v2`/`3v3`/`5v5`), cross-checked with `GetNumArenaOpponents`; per-bracket settings (default: **2v2 only**, 3v3/5v5 disabled in the UI for v0.1).
 - **Bag scan:** stack-aware counting of all healthstone ranks (paired IDs 19004/05 … 19012/13 + Master 22105 count as one rank), `BAG_UPDATE`-driven.
 - **Orchestrator:** state machine `IDLE → ACTIVE → TRADING → DONE`; bracket gate; runtime-only `givenTo` (one trade per partner per prep); gate safety (stop trading N seconds before the gates open); silent retries with backoff (2/4/8 s, ×3).
-- **Trade automation:** dependency-free port of the proven Gargul patterns — `UseContainerItem` placement into the open window, FIFO queue with one item per tick, `ITEM_UNLOCKED` re-add, completion via `ERR_TRADE_COMPLETE`, auto-accept option (off by default).
+- **Trade automation:** dependency-free port of the proven Gargul patterns — `UseContainerItem` placement into the open window, FIFO queue with one item per tick, `ITEM_UNLOCKED` re-add, completion via `ERR_TRADE_COMPLETE`. The player confirms the trade manually (auto-accept is impossible on 2.5.x — `AcceptTrade()` is restricted).
 - **UI:** Interface Options panel (Settings canvas API) — General, Arena brackets, Ranks to pass, Timing; `/acp` slash commands (`status`, `enable`, `disable`, `debug`; bare `/acp` opens the panel). enUS + ruRU localization.
 - **Settings:** SavedVariables wrapper with dot-path get/set, deep-merge of defaults, `ensureDefaults` migration, numeric-key normalization and rank-key cleanup.
 
@@ -30,5 +30,5 @@ Initial release — Warlock only (Healthstones of all ranks), auto-trade during 
 
 ### Notes
 
-- The addon never crafts items itself, never sends gold, and auto-accepts only when the setting is on.
+- The addon never crafts items itself, never sends gold, and never accepts trades — the player confirms manually.
 - License: MIT.

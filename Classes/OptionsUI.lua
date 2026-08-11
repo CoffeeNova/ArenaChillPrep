@@ -1,6 +1,6 @@
 -- ArenaChillPrep — Classes/OptionsUI
 -- Interface Options panel + slash commands.
--- Panel fields: master switch, auto-accept, bracket checkboxes, partner mode
+-- Panel fields: master switch, bracket checkboxes, partner mode
 -- (auto / manual slot), healthstone rank checkboxes + count per rank,
 -- tradeDelay, gateSafetySeconds.
 
@@ -68,10 +68,10 @@ local function handleCommand(input)
     local command = strlower((input or ""):match("^%s*(%S*)") or "");
 
     if (command == "status") then
-        -- Phase 0 DoD: initialized + state.
+        -- Initialized + state.
         ACP:print(L.status, tostring(ACP._initialized), tostring(ACP.DeliveryController.state));
 
-        -- Phase 1 DoD: buff / instance / bracket / remaining (gate countdown).
+        -- Buff / instance / bracket / remaining (gate countdown).
         local ArenaPrep = ACP.ArenaPrep;
         local remaining = ArenaPrep:getRemainingTime();
 
@@ -81,7 +81,7 @@ local function handleCommand(input)
             ArenaPrep:getBracket() or "nil",
             remaining and ("%.1f s"):format(remaining) or "n/a");
 
-        -- Phase 3 DoD: controller detail (partner, brackets, gate safety).
+        -- Controller detail (partner, brackets, gate safety).
         local DC = ACP.DeliveryController;
         local bracket = ArenaPrep:getBracket();
         local bracketInfo = {
@@ -89,8 +89,7 @@ local function handleCommand(input)
             ["3v3"] = ACP.Settings:get("brackets.3v3"),
             ["5v5"] = ACP.Settings:get("brackets.5v5"),
         };
-        local getNumPartyMembers = _G.GetNumPartyMembers or _G.GetNumSubgroupMembers;
-        local partyCount = (getNumPartyMembers and getNumPartyMembers()) or 0;
+        local partyCount = ACP.ArenaPrep:getPartySize();
 
         ACP:print("controller: state=%s | partner=%s | party=%d | brackets: 2v2=%s 3v3=%s 5v5=%s%s",
             DC.state,
@@ -101,7 +100,7 @@ local function handleCommand(input)
             tostring(bracketInfo["5v5"]),
             bracket and (not bracketInfo[bracket]) and " | CURRENT BRACKET DISABLED" or "");
 
-        -- Phase 2 DoD: healthstone counts in bags (stack-aware).
+        -- Healthstone counts in bags (stack-aware).
         local Inventory = ACP.Inventory;
         local healthstones = ACP.Data.Items.healthstones;
         local names = {};
@@ -307,22 +306,9 @@ function OptionsUI:buildAutotrade(content, w, h)
         L.enabledLabel, 10, -8,
         function() return ACP.Settings:get("enabled"); end,
         function(value) setSetting("enabled", value); end);
-
-    Controls.autoAccept = createCheckbox(generalBox, "ACPAutoAcceptCheck",
-        L.autoAcceptLabel, 10, -34,
-        function() return ACP.Settings:get("autoAccept"); end,
-        function(value) setSetting("autoAccept", value); end);
-    Controls.autoAccept:SetScript("OnEnter", function()
-        GameTooltip:SetOwner(Controls.autoAccept, "ANCHOR_RIGHT");
-        GameTooltip:AddLine(L.autoAcceptTooltip);
-        GameTooltip:Show();
-    end);
-    Controls.autoAccept:SetScript("OnLeave", function()
-        GameTooltip:Hide();
-    end);
     leftY = leftY - 62 - 18;
 
-    -- Brackets box (3v3/5v5 disabled for v0.1 — code kept for the future).
+    -- Brackets box (3v3/5v5 disabled for now — code kept for the future).
     createHeader(content, L.bracketsHeader, leftX, leftY);
     leftY = leftY - 28;
 
@@ -336,7 +322,7 @@ function OptionsUI:buildAutotrade(content, w, h)
             function() return ACP.Settings:get("brackets." .. bracket); end,
             function(value) setSetting("brackets." .. bracket, value); end);
 
-        -- v0.1: only 2v2 is enabled. The checkboxes stay visible but disabled.
+        -- Only 2v2 is enabled. The checkboxes stay visible but disabled.
         if (bracket ~= "2v2") then
             Controls.brackets[bracket]:Disable();
             Controls.brackets[bracket]:SetAlpha(0.4);
@@ -349,7 +335,7 @@ function OptionsUI:buildAutotrade(content, w, h)
     local rightX = leftX + colW + COLUMN_GAP;
     local rightY = -4;
 
-    -- Ranks box (WeakAuras-style): built from the class's categories.
+    -- Ranks box: built from the class's categories.
     createHeader(content, L.ranksLabel, rightX, rightY);
     rightY = rightY - 28;
 
@@ -389,8 +375,8 @@ function OptionsUI:buildAutotrade(content, w, h)
 end
 
 --- Build the settings: a top-level category "ArenaChillPrep" with subcategories
---- (Autotrade for now). Subcategories render in the Settings list like Prat /
---- GladiatorlosSA / GatherMate2 (Settings.RegisterCanvasLayoutSubcategory).
+--- (Autotrade for now). Subcategories render in the Settings list
+--- (Settings.RegisterCanvasLayoutSubcategory).
 function OptionsUI:buildPanel()
     local L = ACP.L;
     local panel = CreateFrame("Frame", "ArenaChillPrepOptionsPanel", UIParent);
@@ -411,7 +397,7 @@ function OptionsUI:buildPanel()
 
     if (Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory
         and Settings.RegisterCanvasLayoutSubcategory) then
-        -- Modern API: parent category + subcategory (the GladiatorlosSA look).
+        -- Modern API: parent category + subcategory.
         local parentCategory = Settings.RegisterCanvasLayoutCategory(panel, panel.name);
         Settings.RegisterAddOnCategory(parentCategory);
         self.categoryID = parentCategory and parentCategory.ID;
@@ -447,10 +433,6 @@ function OptionsUI:refresh()
 
     if (Controls.enabled) then
         Controls.enabled:SetChecked(ACP.Settings:get("enabled") == true);
-    end
-
-    if (Controls.autoAccept) then
-        Controls.autoAccept:SetChecked(ACP.Settings:get("autoAccept") == true);
     end
 
     if (Controls.brackets) then
