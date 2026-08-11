@@ -42,7 +42,10 @@ A module may only assume earlier modules exist during its `_init`.
 
 ## Testing etiquette
 
-- The user tests IN GAME (there's no automated test runner in the repo; `Tests/inventory_sandbox.lua` exists but must be loaded via a commented TOC line).
+- **Do NOT touch the unit tests while implementing a feature.** Write/fix production code first; leave `Tests/` alone during the implementation phase.
+- **Only after the feature is finished AND the user gives permission** may you update the unit tests (add coverage for the new behavior, fix tests broken by the change). Exception: the user explicitly asked to edit tests.
+- **Automated unit tests exist** (`Tests/`, run outside the game under LuaJIT): `.\Tests\run-tests.ps1` — exit 0 = pass + coverage ≥ 90%. Run them after any logic change (see repo memory `arena-chill-prep-tests.md` for the gotchas).
+- The user ALSO tests IN GAME (the automated suite can't verify real client behavior).
 - Give exact commands: `/reload`, `/acp status`, `/acp debug`, `/dump <var>`.
 - Ask for the log output when behavior is wrong (see `debug-cycle` skill).
 

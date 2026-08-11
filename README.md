@@ -13,9 +13,8 @@ While the arena preparation buff is active:
 1. Detects your arena bracket (**2v2 / 3v3 / 5v5**) — by default the addon works in **2v2 only** (the other brackets can be enabled in settings; the checkboxes are locked for v0.1).
 2. Scans your bags for the configured healthstones.
 3. As soon as every selected rank is ready (default: a **Major** and a **Master**), it **automatically opens a trade** with your teammate and places the stones into the window.
-4. Optionally auto-accepts the trade (off by default).
-5. Remembers who already received items — **one trade per partner per arena**.
-6. Stops trading **15 seconds before the gates open** (configurable) so you never send a trade mid-fight.
+4. Remembers who already received items — **one trade per partner per arena**.
+5. Stops trading **15 seconds before the gates open** (configurable) so you never send a trade mid-fight.
 
 The addon only acts during arena preparation, never in combat, and never sends gold.
 
@@ -53,7 +52,7 @@ All settings persist between sessions.
 
 ## Development
 
-See `AGENTS.md` → `.github/` (context, architecture, and how to add new classes/items). Dev-only sandbox tests live in `Tests/`.
+See `AGENTS.md` → `.github/` (context, architecture, and how to add new classes/items).
 
 ## Changelog
 

@@ -359,6 +359,27 @@ sequenceDiagram
 
 ---
 
+## 5b. Unit tests (see `Tests/`)
+
+The addon is unit-tested **outside the game** under LuaJIT (Lua 5.1). Coverage target: **≥ 90%** of all non-UI modules (currently 96%+). `OptionsUI.lua` is excluded (UI code).
+
+- **Runner:** `Tests/run_tests.lua` (luacov + luaunit + WoW stubs + loader); PowerShell wrapper `Tests/run-tests.ps1`. Exit `0` = pass + coverage ≥ 90%.
+- **Stubs:** `Tests/stubs/wow_stubs.lua` — mutable WoW state in `_G.__stub`; file-scope captures read it, call-time reads are overridable.
+- **Loader:** `Tests/loader.lua` loads modules in TOC order via the vararg chain.
+- **Helpers:** `Tests/helpers.lua` (singleton) — `SyncTimers` recorder (callbacks advanced explicitly), `deepCopy`, `reloadModule`, `resetAll()`.
+- **Suites:** one `test_<module>.lua` per module, in `Tests/<Data|Utils|Classes>/` mirroring the addon structure (`test_bootstrap.lua` at the root); luaunit discovers `test*` functions alphabetically across suites.
+
+Key testing patterns:
+
+- **Decision logic without the game.** `DeliveryController` tests drive the REAL `ArenaPrep`/`Inventory` through `_G.__stub` + module state (no method overrides → no cross-suite leakage); only `ACP.Utils.Timers` is swapped for the sync recorder.
+- **Event-driven tests** fire bus events (`ACP.Events:fire`) and must call `H.resetAll()` first — events cascade across modules (e.g. `BAG_UPDATE` → `ACP_ITEMS_CHANGED` → DeliveryController).
+- **Settings tests** restore pristine defaults before each test — `Settings:_init` uses `shallowCopy(defaults)` which SHARES nested tables, so mutating `Settings.Data` would corrupt `ACP.Data.DefaultSettings` permanently.
+- **TradeManager tests** stub `startTrade` directly (the real method bails when `self.trading` is true, leaking state between tests).
+
+Full gotcha list: repo memory `arena-chill-prep-tests.md`.
+
+---
+
 ## 6. Future expansion (not in v0.1)
 
 - **v0.2:** Mage — food/water (`food`/`water` categories, same `Inventory` → `DeliveryController` → `TradeManager` pipeline).

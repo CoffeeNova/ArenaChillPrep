@@ -30,6 +30,5 @@ Classes/DeliveryController.lua
 Classes/TradeManager.lua
 Classes/OptionsUI.lua
 
-# Development only - uncomment to load the sandbox tests:
-# Tests/inventory_sandbox.lua
-# Tests/controller_sandbox.lua
+# Unit tests run OUTSIDE the game (LuaJIT) — see Tests/run-tests.ps1.
+# Nothing in Tests/ is loaded by the game.

@@ -28,6 +28,7 @@ Everything an agent needs — project context, architecture, as well as skills, 
 | `settings-savedvars` | Settings/`ArenaChillPrepDB`: dot-path get/set, numeric-vs-string keys, migration, rank logic |
 | `phase-workflow` | End-to-end phase/feature workflow (contract-first, todo, verify, document, hand back) |
 | `lua-refactoring` | Refactoring/cleanup/restructuring of Lua files |
+| `unit-testing` | Writing/running the unit tests (luaunit + luacov under LuaJIT): runner, stubs, suite layout, AAA conventions, cross-suite gotchas |
 
 ## Agents (`.github/agents/`)
 
@@ -45,4 +46,12 @@ Everything an agent needs — project context, architecture, as well as skills, 
 
 - `research.ps1` — search working addons via PowerShell `Select-String` (workspace search misses the WoW folder).
 - `vararg-check.ps1` — every `.lua` ends with `return ACP;` + TOC load-order check.
-- `syntax-check.ps1` — `luac/luajit -p` syntax check (requires a Lua interpreter; none installed yet).
+- `syntax-check.ps1` — `luac/luajit -p` syntax check (requires a Lua interpreter; LuaJIT is installed via winget).
+
+## Unit tests (`Tests/`)
+
+- Run: `.\Tests\run-tests.ps1` (or `luajit Tests\run_tests.lua` from the addon root). Requires LuaJIT on PATH.
+- Exit codes: `0` = pass + coverage ≥ 90%, `1` = test failures, `2` = coverage < 90%.
+- Covers all non-UI modules (96%+ line coverage); `OptionsUI.lua` excluded.
+- **Before writing or running tests, read the `unit-testing` skill** (`.github/skills/unit-testing/SKILL.md`) — runner, stubs, suite layout, conventions, and the cross-suite gotchas.
+- Gotchas also in repo memory `arena-chill-prep-tests.md`.

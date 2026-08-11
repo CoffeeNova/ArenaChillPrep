@@ -21,6 +21,7 @@ description: Main agent for developing the ArenaChillPrep addon (WoW TBC Anniver
 - **Lua 5.1**; `---@class` annotations; `_G.` prefix for globals.
 - **Verify APIs against `wow-api-20506`** before using; research working addons when unsure (see `addon-research`).
 - **Silent failures**: follow `debug-cycle` (add debugPrint / TEMP diagnostics, ask user for a log).
+- **Do NOT edit unit tests while implementing a feature.** Write production code first; leave `Tests/` alone. Only after the feature is finished AND the user gives permission may you update the tests (add coverage, fix broken tests). Exception: the user explicitly asked to edit tests.
 - **Memory**: append `Phase N DONE` + update gotchas/decisions files after each task.
 
 ## Output format (when done)

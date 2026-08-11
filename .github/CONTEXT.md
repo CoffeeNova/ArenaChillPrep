@@ -78,6 +78,21 @@ ArenaChillPrep/
     ├── Items.lua             # Item helpers (find by ID, counters, bag search)
     ├── Tables.lua            # Table helpers
     └── Timers.lua            # Named timers via C_Timer (after/interval/cancel)
+Tests/                        # Unit tests (run OUTSIDE the game under LuaJIT)
+    ├── run_tests.lua         # Runner: luacov + luaunit + WoW stubs + loader
+    ├── run-tests.ps1         # PowerShell wrapper (exit 0 = pass + coverage ≥ 90%)
+    ├── loader.lua            # Loads all modules in TOC order via the vararg chain
+    ├── helpers.lua           # SyncTimers recorder, deepCopy, resetAll (singleton)
+    ├── stubs/wow_stubs.lua   # WoW API stubs (mutable state in _G.__stub)
+    ├── lib/                  # Vendored: luaunit 3.5 + luacov 0.17
+    ├── test_bootstrap.lua    # bootstrap suite (mirrors the addon root)
+    ├── Data/                 # Suites mirror the addon structure
+    │   └── test_*.lua        #   constants, items, defaultsettings, localization
+    ├── Utils/
+    │   └── test_*.lua        #   tables, items, timers
+    └── Classes/
+        └── test_*.lua        #   events, settings, arenaprep, inventory,
+                              #   deliverycontroller, trademanager
 ```
 
 ---
@@ -90,6 +105,29 @@ ArenaChillPrep/
 - Style follows the **Gargul** addon (same workspace): `---@class` annotations, `_G.` prefix for global APIs, local aliases for globals at the top of the file.
 - UI strings go through `Data/Localization.lua` (table `L`, metatable fallback to the key, like `Gargul_L`).
 - Cross-session state only via `ArenaChillPrepDB` (SavedVariables), accessed through `ACP.Settings`.
+
+---
+
+## Unit tests (run outside the game)
+
+The addon has an automated unit-test suite in `Tests/` that runs under **LuaJIT** (Lua 5.1 — the same version WoW uses), so no game client is needed. It covers **all non-UI modules** (bootstrap, Data, Utils, and the Classes logic) with **96%+ line coverage**; `OptionsUI.lua` is excluded (UI code — checkboxes/forms/labels).
+
+**Run:** `.\Tests\run-tests.ps1` (or `luajit Tests\run_tests.lua` from the addon root). Requires LuaJIT on PATH (`winget install DEVCOM.LuaJIT`). Exit codes: `0` = pass + coverage ≥ 90%, `1` = test failures, `2` = coverage < 90%. Report: `Tests/luacov.report.out`.
+
+**How it works:**
+
+- `Tests/stubs/wow_stubs.lua` stubs the WoW API. Mutable state lives in `_G.__stub` (time, instance, aura, party size, combat, bags, chat). File-scope captures (e.g. `GetTime`, `C_UnitAuras`, `TradeFrame`) read `_G.__stub`; call-time reads can be overridden directly.
+- `Tests/loader.lua` loads every module in TOC order through the vararg chain.
+- `Tests/helpers.lua` is a **singleton** (`_G.__TEST_HELPERS`) providing `SyncTimers` (a synchronous timer recorder — callbacks are stored, advanced explicitly via `H.advance(name)`), `deepCopy`, `reloadModule`, and `resetAll()` (re-inits ALL modules + wipes the event bus).
+- Each `Tests/<Data|Utils|Classes>/test_<module>.lua` (mirroring the addon structure; `test_bootstrap.lua` at the root) defines global `test*` functions; luaunit discovers them **alphabetically across all suites**.
+
+**Gotchas when writing tests (see repo memory `arena-chill-prep-tests.md` for the full list):**
+
+- luaunit runs tests alphabetically across suites — every test must restore what it mutates (Settings DB, module state, globals, event bus).
+- `Settings:_init` uses `shallowCopy(defaults)` which SHARES nested tables — mutating `Settings.Data` corrupts `ACP.Data.DefaultSettings` permanently. Settings tests restore pristine defaults before each test.
+- Event-driven tests must call `H.resetAll()` first (events cascade across modules, e.g. `BAG_UPDATE` → `ACP_ITEMS_CHANGED` → DeliveryController).
+- `C_Container.GetContainerItemInfo` returns a TABLE; the legacy global returns the 11-value tuple — stubs must provide both.
+- `Utils/Items` prefers the GLOBAL `GetContainerNumSlots` but `C_Container` for `GetContainerItemInfo` — override all four container functions in bag stubs.
 
 ---
 

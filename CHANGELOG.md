@@ -1,5 +1,16 @@
 # ArenaChillPrep Changelog
 
+## [Unreleased] (2026-08-11)
+
+### Added
+
+- **Automated unit-test suite** (`Tests/`) — runs **outside the game** under LuaJIT (Lua 5.1, the same version WoW uses):
+  - `luaunit` 3.5 + `luacov` 0.17 vendored in `Tests/lib/`.
+  - `Tests/run_tests.lua` runner + `Tests/run-tests.ps1` wrapper (exit `0` = pass + coverage ≥ 90%).
+  - WoW API stubs (`Tests/stubs/wow_stubs.lua`), module loader (`Tests/loader.lua`), shared helpers (`Tests/helpers.lua`).
+  - **169 tests covering all non-UI modules** (bootstrap, Data, Utils, Classes logic) at **96.45% line coverage** — `OptionsUI.lua` excluded (UI code).
+  - Coverage report: `Tests/luacov.report.out`.
+
 ## [v0.1.0] (2026-08-09)
 
 Initial release — Warlock only (Healthstones of all ranks), auto-trade during arena preparation on TBC Anniversary (Interface 20506).
@@ -24,8 +35,8 @@ Initial release — Warlock only (Healthstones of all ranks), auto-trade during 
 
 ### Tested
 
-- Decision logic covered by a deterministic in-game sandbox: bracket gate (2v2 default vs 3v3), `givenTo` (2v2 — one trade; 3v3 — second batch to the other partner, pre-crafted and post-craft), gate safety, trade-open timeout, stray failure, death check (`Tests/controller_sandbox.lua`, dev-only).
-- Stack counting / soulbound skip covered by `Tests/inventory_sandbox.lua` (dev-only).
+- Decision logic covered by a deterministic in-game sandbox: bracket gate (2v2 default vs 3v3), `givenTo` (2v2 — one trade; 3v3 — second batch to the other partner, pre-crafted and post-craft), gate safety, trade-open timeout, stray failure, death check (superseded by the automated suite in `Tests/`).
+- Stack counting / soulbound skip covered by the automated suite in `Tests/`.
 - Live-verified in arenas (phases 1–5): buff/bracket/countdown detection, full 2v2 trade cycle, `givenTo` single-trade-per-partner, gate-safety and bracket-gate behavior.
 
 ### Notes
