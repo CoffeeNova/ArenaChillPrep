@@ -228,7 +228,7 @@ Logic reused by several modules belongs in a shared helper.
 
 - Move generic helpers (table ops, bag scans, timers) to `Utils/`.
 - Move a cohesive service (e.g. trade window automation) to its own `Classes/` module.
-- In this workspace: update `bootstrap.lua` load order and `.github/` docs if the file list changes.
+- In this workspace: update `bootstrap.lua` load order and `.ai/` docs if the file list changes.
 - Keep the module API small and stable: few public functions, everything else `local`.
 
 ### T4. Extract constants

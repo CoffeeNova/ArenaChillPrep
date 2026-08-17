@@ -7,14 +7,14 @@ description: The end-to-end workflow for implementing a phase or feature of the 
 
 ## Golden rule
 
-**.github/ is the contract.** When the design or plan changes, update `.github/CONTEXT.md` and `ARCHITECTURE.md` FIRST, then code. Never let code drift from the docs.
+**.ai/ is the contract.** When the design or plan changes, update `.ai/CONTEXT.md` and `ARCHITECTURE.md` FIRST, then code. Never let code drift from the docs.
 
 ## The loop (repeat for every phase/feature)
 
-1. **Read the contract**: `AGENTS.md` → `.github/CONTEXT.md` → `.github/ARCHITECTURE.md`.
-2. **Read repo memory**: `/memories/repo/arena-chill-prep.md` + topic files (gotchas, decisions, phases) — they carry the verified history; don't re-learn what's there.
+1. **Read the contract**: `AGENTS.md` → `.ai/CONTEXT.md` → `.ai/ARCHITECTURE.md`.
+2. **Read repo memory**: `/.ai/memories/repo/arena-chill-prep.md` + topic files (gotchas, decisions, phases) — they carry the verified history; don't re-learn what's there.
 3. **Check current state**: read the files you'll touch; note any drift from the docs (the user or tooling may have edited them).
-4. **Create a todo list** for the phase (manage_todo_list tool) — one item per deliverable, mark in-progress/completed as you go.
+4. **Create a todo list** for the phase (one item per deliverable; mark in-progress/completed as you go).
 5. **Update the contract FIRST** if the phase changes behavior (rule 1).
 6. **Implement** per the addon's conventions:
    - Lua 5.1, no libraries, single global `ACP`;
@@ -24,7 +24,7 @@ description: The end-to-end workflow for implementing a phase or feature of the 
    - timers via `ACP.Utils.Timers` (C_Timer wrapper), never Ace;
    - cross-session state only via `ArenaChillPrepDB` through `ACP.Settings`.
 7. **Verify in the sandbox**: no editor errors; run `tools/vararg-check.ps1` (every file ends `return ACP;`) and `tools/syntax-check.ps1` if a Lua interpreter is available.
-8. **Update memory**: append a `Phase N DONE` line to `/memories/repo/`; add NEW gotchas to `arena-chill-prep-gotchas.md` and the `wow-api-20506` skill; update decisions/status files.
+8. **Update memory**: append a `Phase N DONE` line to `/.ai/memories/repo/`; add NEW gotchas to `arena-chill-prep-gotchas.md` and the `wow-api-20506` skill; update decisions/status files.
 9. **Hand back to the user** with:
    - what changed (files + behavior);
    - the Definition of Done as concrete in-game test steps (`/reload`, what to observe);

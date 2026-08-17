@@ -2,8 +2,8 @@
 # session (or the caller's scope when dot-sourced).
 #
 # Usage:
-#   . .\.github\tools\load-env.ps1        # dot-source: sets $env: vars in your session
-#   .\.github\tools\load-env.ps1          # run: prints the resolved values
+#   . .\.ai\tools\load-env.ps1        # dot-source: sets $env: vars in your session
+#   .\.ai\tools\load-env.ps1          # run: prints the resolved values
 #
 # Reads .env from the repo root (KEY=VALUE lines, '#' = comment). Missing .env
 # is not an error - scripts that need a path fail with a clear message instead.

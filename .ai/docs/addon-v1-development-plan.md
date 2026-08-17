@@ -1,6 +1,6 @@
 # ArenaChillPrep — v0.1 Development Plan (first version)
 
-> **Archived — starting point for v0.1 only.** This is the initial development plan that was used to build the **first version** of the addon. It is intentionally **not referenced** by the current agent workflow (`AGENTS.md`, `.github/`) — treat it as historical context.
+> **Archived — starting point for v0.1 only.** This is the initial development plan that was used to build the **first version** of the addon. It is intentionally **not referenced** by the current agent workflow (`AGENTS.md`, `.ai/`) — treat it as historical context.
 
 **Target version:** v0.1 — Warlock only (Healthstones of all ranks) and passing them to a partner during arena preparation.
 
@@ -27,7 +27,7 @@
   - Stub modules (each file exists, `_init()` empty).
 - [x] `Data/Constants.lua`: `ACP.Data.Constants.ARENA_PREP_SPELL_ID = 32727`, `MAX_TRADE_RETRIES = 3`, timings.
 - [x] `Data/Items.lua`: healthstone catalog `19004/19005/19006/19007/19008/19009` + `classItems[CLASS_WARLOCK]`.
-- [x] `Data/DefaultSettings.lua`: settings structure (see `.github/CONTEXT.md`), including `gateSafetySeconds = 15`.
+- [x] `Data/DefaultSettings.lua`: settings structure (see `.ai/CONTEXT.md`), including `gateSafetySeconds = 15`.
 - [x] `Data/Localization.lua`: `L` table (enUS + ruRU minimum).
 - [x] `Utils/Tables.lua`, `Utils/Items.lua`, `Utils/Timers.lua` (basic helpers + named timers via `C_Timer`).
 
@@ -198,7 +198,7 @@ Reason: Request Failed: 400 {"error":{"type":"server_error","message":"Error fro
 ### Definition of Done
 
 - v0.1 works stably for the author: at least 10 arenas with zero errors and no missed trade.
-- README is up to date; how to add a new class/item is documented step by step (per `.github/ARCHITECTURE.md`, 6).
+- README is up to date; how to add a new class/item is documented step by step (per `.ai/ARCHITECTURE.md`, 6).
 
 ### Phase 6 — live test checklist (in-game)
 
@@ -250,7 +250,7 @@ Run with `/console scriptErrors 1`. `/acp debug` on during tests. Enable 3v3 for
 
 ## Working with an AI assistant
 
-1. Before starting a phase — read `.github/ARCHITECTURE.md` and `.github/CONTEXT.md` (Context for developers section).
+1. Before starting a phase — read `.ai/ARCHITECTURE.md` and `.ai/CONTEXT.md` (Context for developers section).
 2. Implement the phase files per the task list.
 3. Verify the phase DoD in game.
 4. After the phase — check the boxes and record issues in `CHANGELOG.md` or an issue.

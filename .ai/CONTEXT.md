@@ -1,6 +1,6 @@
 # ArenaChillPrep — Context (for AI agents)
 
-> Source of truth: this directory (`.github/`). Entry point: `AGENTS.md` at the repo root.
+> Source of truth: this directory (`.ai/`). Entry point: `AGENTS.md` at the repo root.
 > This file is the main source of context when working on the addon. **Read `ARCHITECTURE.md` before changing any code.**
 
 **Current status:** v0.1 in development — Warlock only (Soulstones of all ranks).
@@ -54,11 +54,11 @@ While the arena preparation buff is active, the addon will:
 
 ```
 ArenaChillPrep/
-├── AGENTS.md                 # Agent entry point → read .github/ (this directory)
+├── AGENTS.md                 # Agent entry point → read .ai/ (this directory)
 ├── ArenaChillPrep.toc        # TOC (Interface: 20506, SavedVariables: ArenaChillPrepDB)
 ├── bootstrap.lua             # Entry point: global ACP table, event frame, initialization
 ├── README.md                 # Human-facing description (users) — not technical docs
-├── .github/                  # Agent documentation & instructions (source of truth)
+├── .ai/                  # Agent documentation & instructions (source of truth)
 │   ├── CONTEXT.md            # This file: context, conventions, gotchas, settings
 │   └── ARCHITECTURE.md       # Architecture: modules, data flow, state machine
 ├── Data/                     # Static data
@@ -109,7 +109,7 @@ and its path must never be hardcoded here.
 - `.env` is git-ignored (machine-specific). `.env.example` documents the variable.
 - Scripts that need the path read it from the environment:
   - `tools/research.ps1` — searches the working addons (default root = `$env:addons_path_anniversary`, override with `-Root`).
-  - `tools/load-env.ps1` — loads `.env` into the session (dot-source it: `. .\.github\tools\load-env.ps1`).
+  - `tools/load-env.ps1` — loads `.env` into the session (dot-source it: `. .\.ai\tools\load-env.ps1`).
   - `tools/deploy.ps1` — deploys the addon to the client (see below).
 - To test in game: run `tools/deploy.ps1` — it copies **only the game artifacts**
   (the `.toc` + every file it references + `LICENSE`) into `%addons_path_anniversary%\ArenaChillPrep`,

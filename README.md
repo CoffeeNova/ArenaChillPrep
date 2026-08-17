@@ -4,7 +4,7 @@ Automatically hands crafted items to your arena partner during **arena preparati
 
 Currently supports **Warlock** — passes **Healthstones** (all ranks, default: Major + Master). More classes and items are planned.
 
-> For developers and AI agents: technical docs live in `AGENTS.md` and the `.github/` directory (context and architecture). `README.md` is for players.
+> For developers and AI agents: technical docs live in `AGENTS.md` and the `.ai/` directory (context and architecture). `README.md` is for players.
 
 ## How it works
 
@@ -52,7 +52,7 @@ All settings persist between sessions.
 
 ## Development
 
-See `AGENTS.md` → `.github/` (context, architecture, and how to add new classes/items).
+See `AGENTS.md` → `.ai/` (context, architecture, and how to add new classes/items).
 
 ## Changelog
 

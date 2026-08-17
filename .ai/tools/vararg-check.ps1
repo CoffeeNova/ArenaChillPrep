@@ -14,11 +14,11 @@ param(
 $failures = 0
 
 # --- 1. Every module file ends with return ACP; -----------------------------
-# Excluded: .github (docs/tools) and Tests/ (unit tests + vendored libs —
+# Excluded: .ai (docs/tools) and Tests/ (unit tests + vendored libs —
 # none are addon modules loaded through the vararg chain).
 $luaFiles = Get-ChildItem $Root -Recurse -Filter *.lua -ErrorAction SilentlyContinue |
     Where-Object {
-        $_.FullName -notmatch '\\.github\\' -and
+        $_.FullName -notmatch '\\.ai\\' -and
         $_.FullName -notmatch '\\Tests\\'
     }
 

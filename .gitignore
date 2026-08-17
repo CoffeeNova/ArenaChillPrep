@@ -5,5 +5,5 @@ Tests/luacov.report.out
 # Local development environment (machine-specific paths). Copy .env.example → .env.
 .env
 
-# Release bundles built by .github/tools/deploy.ps1 -Bundle.
+# Release bundles built by .ai/tools/deploy.ps1 -Bundle.
 dist/

@@ -1,7 +1,7 @@
 # research.ps1 - search working WoW addons for API patterns (the workspace search
 # does NOT index the WoW folder, so we use Select-String).
 #
-# Usage (from .github/tools):
+# Usage (from .ai/tools):
 #   .\research.ps1 -Pattern "RegisterCanvasLayoutSubcategory"          # all addons, all files
 #   .\research.ps1 -Pattern "GetPlayerAuraBySpellID" -Addons Gargul,sArena_Reloaded
 #   .\research.ps1 -Pattern "C_Item.GetItemGUID" -Context 3            # show 3 lines before/after

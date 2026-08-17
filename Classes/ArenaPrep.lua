@@ -10,7 +10,7 @@
 -- spellID/expirationTime.
 -- Gate countdown (verified on 2.5.5): the prep buff aura reports duration=0,
 -- so the countdown comes from CHAT_MSG_BG_SYSTEM_NEUTRAL + the localized
--- message map (see .github/CONTEXT.md gotcha #12 and
+-- message map (see .ai/CONTEXT.md gotcha #12 and
 -- ACP.Data.Constants.ARENA_COUNTDOWN_MESSAGES).
 
 ---@type ACP
@@ -95,7 +95,7 @@ function ArenaPrep:checkNow()
 
         -- Seed the gate countdown until the first countdown message arrives.
         -- On 2.5.5 the prep buff aura reports duration=0, so the aura cannot
-        -- measure it — see .github/CONTEXT.md gotcha #12.
+        -- measure it — see .ai/CONTEXT.md gotcha #12.
         if (not self.countdownEndTime) then
             self.countdownEndTime = GetTime() + ACP.Data.Constants.ARENA_PREP_SECONDS;
         end

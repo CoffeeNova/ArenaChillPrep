@@ -1,6 +1,6 @@
 -- ArenaChillPrep — Classes/DeliveryController
 -- Orchestrator — the only module that makes decisions.
--- State machine: IDLE -> ACTIVE -> TRADING -> DONE (see .github/ARCHITECTURE.md 2.5).
+-- State machine: IDLE -> ACTIVE -> TRADING -> DONE (see .ai/ARCHITECTURE.md 2.5).
 --
 -- Responsibilities:
 --   - bracket gate on ACP_BUFF_GAINED (Settings "brackets.<bracket>", 2v2 default);

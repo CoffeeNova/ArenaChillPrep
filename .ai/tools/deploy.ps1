@@ -5,13 +5,13 @@
 #   - the .toc file (the manifest),
 #   - every file listed in the .toc (Lua modules, XML, textures, sounds, fonts),
 #   - the LICENSE file (CurseForge requires it in the package).
-# Everything else (Tests/, .github/, .env, docs, git) is NOT copied.
+# Everything else (Tests/, .ai/, .env, docs, git) is NOT copied.
 #
 # Usage:
-#   .\.github\tools\deploy.ps1                     # copy to $env:addons_path_anniversary
-#   .\.github\tools\deploy.ps1 -Bundle             # build a zip in .\dist\ instead
-#   .\.github\tools\deploy.ps1 -Target "D:\tmp"    # copy to an explicit folder
-#   .\.github\tools\deploy.ps1 -Bundle -OutDir "D:\releases"
+#   .\.ai\tools\deploy.ps1                     # copy to $env:addons_path_anniversary
+#   .\.ai\tools\deploy.ps1 -Bundle             # build a zip in .\dist\ instead
+#   .\.ai\tools\deploy.ps1 -Target "D:\tmp"    # copy to an explicit folder
+#   .\.ai\tools\deploy.ps1 -Bundle -OutDir "D:\releases"
 #
 # The AddOns folder comes from the .env variable `addons_path_anniversary`
 # (see .env.example). The bundle is named <addon>-<version>.zip, where the

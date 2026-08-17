@@ -249,7 +249,7 @@ InitiateTrade(unit)
 
 ### 2.7 `Classes/Settings.lua` and `Data/DefaultSettings.lua`
 
-- `ArenaChillPrepDB` — SavedVariables (see `.github/CONTEXT.md`).
+- `ArenaChillPrepDB` — SavedVariables (see `.ai/CONTEXT.md`).
 - `Settings:get(path)` / `Settings:set(path, value)` — access by dot path (`"items.soulstone.count"`).
 - On load — deep merge of defaults and saved data (robust against new settings added in future versions).
 
@@ -257,7 +257,7 @@ InitiateTrade(unit)
 
 - Panel in **Interface Options** (AddOns category → ArenaChillPrep).
 - Fields: master switch, partner mode (auto/party1 + slot picker), soulstone count, `tradeDelay`, and **bracket checkboxes (2v2 / 3v3 / 5v5)** — default `2v2` checked, `3v3` and `5v5` unchecked.
-- Slash command `/acp` (see `.github/CONTEXT.md`) + `SLASH_ACP1`.
+- Slash command `/acp` (see `.ai/CONTEXT.md`) + `SLASH_ACP1`.
 - All changes — instantly into `ArenaChillPrepDB` via `Settings:set`.
 
 ### 2.9 `Data/Items.lua` — item catalog

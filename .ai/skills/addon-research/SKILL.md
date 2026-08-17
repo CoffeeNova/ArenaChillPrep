@@ -7,7 +7,7 @@ description: How to research WoW API behavior by reading the working addons inst
 
 ## Why this exists
 
-The VS Code `grep_search` / `file_search` tools do **not index** the WoW AddOns folder (the path comes from the `.env` variable `addons_path_anniversary` — see `.env.example`). Searching it via the built-in search returns nothing. The reliable way to search the addons is **PowerShell `Select-String`** (see `tools/research.ps1`).
+The workspace search (`file_search` / `grep` used by IDEs and AI agents) does **not index** the WoW AddOns folder (the path comes from the `.env` variable `addons_path_anniversary` — see `.env.example`). Searching it via the built-in search returns nothing. The reliable way to search the addons is **PowerShell `Select-String`** (see `tools/research.ps1`).
 
 Working addons on THIS client are the best documentation: every pattern in this project (trade, arena countdown, aura iteration, settings subcategories, item DBs) was verified by reading them.
 

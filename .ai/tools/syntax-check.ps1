@@ -28,7 +28,7 @@ Write-Output ("Using: {0}" -f $lua.Source)
 
 $failures = 0
 $files = Get-ChildItem $Root -Recurse -Filter *.lua -ErrorAction SilentlyContinue |
-    Where-Object { $_.FullName -notmatch '\\.github\\' }
+    Where-Object { $_.FullName -notmatch '\\.ai\\' }
 
 foreach ($file in $files) {
     # luac -p = parse only (no output file); luajit -bl is for bytecode, so use -b with /dev/null or -p fallback.
