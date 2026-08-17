@@ -115,7 +115,7 @@ local H = dofile(_G.__TESTS_ROOT .. "/helpers.lua");
 ## Gotchas (learned the hard way — read before writing tests)
 
 1. **luaunit runs tests alphabetically across suites.** A test in one suite can break a test in another. Every test must restore what it mutates.
-2. **`Settings:_init` uses `shallowCopy(defaults)` which SHARES nested tables.** Mutating `Settings.Data` corrupts `ACP.Data.DefaultSettings` permanently. Settings tests must restore pristine defaults before each test:
+2. **`Settings:_init` deep-copies the defaults** — the live `Data` is fully detached from `ACP.Data.DefaultSettings` (a historical `shallowCopy` shared nested tables and let `Settings:set` corrupt the defaults permanently; fixed). Settings tests still restore pristine defaults before each test (`freshSettings`) so no state leaks across suites:
    ```lua
    local PristineDefaults = H.deepCopy(ACP.Data.DefaultSettings);
    local function freshSettings()

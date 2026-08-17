@@ -10,10 +10,11 @@ description: Patterns and pitfalls for this addon's settings system (ArenaChillP
 - Global: `ArenaChillPrepDB` (SavedVariables in the TOC).
 - Access ONLY via `ACP.Settings:get(path)` / `:set(path, value)` — never touch `ArenaChillPrepDB` directly except in `setSetting()` (which also persists `ArenaChillPrepDB = ACP.Settings.Data`) and in `Settings:_init`.
 - Defaults live in `Data/DefaultSettings.lua`; `Settings:_init` does:
-  1. `deepMerge(shallowCopy(defaults), ArenaChillPrepDB or {})` — saved wins;
+  1. `deepMerge(deepCopy(defaults), ArenaChillPrepDB or {})` — saved wins; the merge base is a **deep** copy so the live `Data` never shares nested tables with `ACP.Data.DefaultSettings` (a shallow copy let `Settings:set` write THROUGH the shared reference and permanently corrupt the defaults — and with it "Reset to defaults");
   2. `ensureDefaults(Data, defaults)` — fills keys MISSING from saved (migration);
   3. `normalizeRankKeys(items)` — collapses string rank keys into numeric;
   4. `ArenaChillPrepDB = self.Data` — persist the fixed structure.
+- `Settings:reset()` — `self.Data = Tables:deepCopy(ACP.Data.DefaultSettings)` (pristine, thanks to the deep merge base), persists the DB and calls `ACP.OptionsUI:refresh()` when present. Used by the "Reset to defaults" button in the General subcategory.
 
 ## The number-vs-string key trap (IMPORTANT)
 

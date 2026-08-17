@@ -41,6 +41,7 @@ graph TD
 
     subgraph UI
         O[Classes/OptionsUI.lua]
+        W[Classes/UI/Widgets.lua]
     end
 
     B --> E
@@ -50,6 +51,7 @@ graph TD
     B --> DC
     B --> TM
     B --> O
+    O --> W
 
     E --> AP
     E --> INV
@@ -251,14 +253,40 @@ InitiateTrade(unit)
 
 - `ArenaChillPrepDB` — SavedVariables (see `.ai/CONTEXT.md`).
 - `Settings:get(path)` / `Settings:set(path, value)` — access by dot path (`"items.soulstone.count"`).
+- `Settings:reset()` — restores a **deep copy** of `ACP.Data.DefaultSettings` (via `Utils/Tables:deepCopy`, so the live Data never shares nested tables with the defaults) and re-syncs the panel via `ACP.OptionsUI:refresh()` when present. Used by the "Reset to defaults" button in the General subcategory.
 - On load — deep merge of defaults and saved data (robust against new settings added in future versions).
 
-### 2.8 `Classes/OptionsUI.lua`
+### 2.8 `Classes/OptionsUI.lua` (+ `Classes/UI/Widgets.lua`)
 
-- Panel in **Interface Options** (AddOns category → ArenaChillPrep).
-- Fields: master switch, partner mode (auto/party1 + slot picker), soulstone count, `tradeDelay`, and **bracket checkboxes (2v2 / 3v3 / 5v5)** — default `2v2` checked, `3v3` and `5v5` unchecked.
+The settings UI is split into **presentation** (`Classes/UI/Widgets.lua`) and **logic** (`Classes/OptionsUI.lua`), inspired structurally by Prat-3.0 (tabbed subcategories, header dividers, tooltips on every control, reset button). See `.ai/docs/ui-redesign-plan.md` for the full spec.
+
+**`Classes/UI/Widgets.lua`** — reusable vanilla-API widgets in `ACP.UI.*`, with all geometry constants in one place:
+
+```lua
+ACP.UI.PANEL_WIDTH  = 660   ACP.UI.PANEL_HEIGHT = 400
+ACP.UI.PADDING      = 14    ACP.UI.ROW_HEIGHT   = 24
+ACP.UI.GAP          = 16    ACP.UI.BOX_INSET    = 10
+ACP.UI.DISABLED_ALPHA = 0.4
+ACP.UI.Box(parent, x, y, w, h)                    -- boxed container (BackdropTemplate)
+ACP.UI.Header(parent, text, x, y)                 -- yellow section header
+ACP.UI.Divider(parent, x, y, w)                   -- horizontal divider between groups
+ACP.UI.Checkbox(parent, name, text, x, y, getter, setter, tooltipText)
+ACP.UI.Slider(parent, name, text, x, y, min, max, step, getter, setter, tooltipText)
+ACP.UI.Button(parent, text, x, y, w, h, onClick, tooltipText)
+```
+
+- Widgets are **presentation-only**: they know nothing about `ACP.Settings` — callers pass `getter`/`setter` closures (kept from the old code). Tooltips are passed as text and attached via `GameTooltip` `OnEnter`/`OnLeave` (`ANCHOR_RIGHT`, `wrap=true`) to the widget AND its label.
+- Client gotchas honored: `CreateFrame(..., "BackdropTemplate")` is mandatory before `SetBackdrop`; `OptionsSliderTemplate` does NOT create a global `"<name>Text"` (the label is built manually with `CreateFontString` above the slider); no Ace — all controls are Blizzard templates (`UICheckButtonTemplate`, `OptionsSliderTemplate`, `UIPanelButtonTemplate`).
+
+**`Classes/OptionsUI.lua`** — registration + assembly only:
+
+- Top-level category **ArenaChillPrep** with tabbed subcategories via `Settings.RegisterCanvasLayoutSubcategory`:
+  - **General** — master switch (`enabled`) and the **"Reset to defaults" button** (`ACP.Settings:reset()`).
+  - **Autotrade** — two columns: left = bracket checkboxes (2v2 enabled; 3v3/5v5 permanently disabled + alpha 0.4) and timing sliders (`tradeDelay`, `gateSafetySeconds`) with a **header divider** between them; right = rank checkboxes (from `ACP.Data.Items.classItems` for the player's class).
+- Every control has a tooltip; master switch off → all Autotrade controls are disabled + grayed (conditional disable via `setAutotradeEnabled`, on top of the permanent 3v3/5v5 disable).
 - Slash command `/acp` (see `.ai/CONTEXT.md`) + `SLASH_ACP1`.
-- All changes — instantly into `ArenaChillPrepDB` via `Settings:set`.
+- All changes — instantly into `ArenaChillPrepDB` via `Settings:set`. "Reset to defaults" writes a deep copy of `ACP.Data.DefaultSettings` and re-syncs the panel via `refresh()`.
+- The `Settings` module init order (Settings → ... → OptionsUI) is unchanged; `Widgets.lua` loads in the TOC just before `OptionsUI.lua`.
 
 ### 2.9 `Data/Items.lua` — item catalog
 
@@ -373,7 +401,7 @@ Key testing patterns:
 
 - **Decision logic without the game.** `DeliveryController` tests drive the REAL `ArenaPrep`/`Inventory` through `_G.__stub` + module state (no method overrides → no cross-suite leakage); only `ACP.Utils.Timers` is swapped for the sync recorder.
 - **Event-driven tests** fire bus events (`ACP.Events:fire`) and must call `H.resetAll()` first — events cascade across modules (e.g. `BAG_UPDATE` → `ACP_ITEMS_CHANGED` → DeliveryController).
-- **Settings tests** restore pristine defaults before each test — `Settings:_init` uses `shallowCopy(defaults)` which SHARES nested tables, so mutating `Settings.Data` would corrupt `ACP.Data.DefaultSettings` permanently.
+- **Settings tests** restore pristine defaults before each test — `Settings:_init` deep-copies the defaults (the live `Data` is detached from `ACP.Data.DefaultSettings`; a historical shallow copy shared nested tables and could corrupt the defaults via `Settings:set`).
 - **TradeManager tests** stub `startTrade` directly (the real method bails when `self.trading` is true, leaking state between tests).
 
 Full gotcha list: repo memory `arena-chill-prep-tests.md`.

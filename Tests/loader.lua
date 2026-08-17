@@ -28,6 +28,7 @@ load("Classes/ArenaPrep.lua");
 load("Classes/Inventory.lua");
 load("Classes/DeliveryController.lua");
 load("Classes/TradeManager.lua");
+load("Classes/UI/Widgets.lua");
 load("Classes/OptionsUI.lua");
 
 return ACP;

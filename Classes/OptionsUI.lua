@@ -1,8 +1,12 @@
 -- ArenaChillPrep — Classes/OptionsUI
 -- Interface Options panel + slash commands.
--- Panel fields: master switch, bracket checkboxes, partner mode
--- (auto / manual slot), healthstone rank checkboxes + count per rank,
--- tradeDelay, gateSafetySeconds.
+-- Panel structure (see .ai/docs/ui-redesign-plan.md):
+--   General   — master switch, "Reset to defaults" button, status line
+--   Autotrade — bracket checkboxes, rank checkboxes, timing sliders
+--               (header divider between Ranks and Timing)
+-- All control creation lives in Classes/UI/Widgets.lua (ACP.UI.*); this
+-- module only registers subcategories, assembles the layouts and syncs
+-- controls from Settings.
 
 ---@type ACP
 local _, ACP = ...;
@@ -10,6 +14,7 @@ local _, ACP = ...;
 local strlower = _G.strlower;
 local tinsert = _G.tinsert;
 local pairs = _G.pairs;
+local ipairs = _G.ipairs;
 
 ---@class OptionsUI
 local OptionsUI = {
@@ -18,7 +23,7 @@ local OptionsUI = {
     ---@type Frame
     Panel = nil,
 
-    ---@type table<string, CheckButton>
+    ---@type table<string, any>
     Controls = {},
 
     ---@type table<string, table<number, table<number, number>>>
@@ -27,7 +32,7 @@ local OptionsUI = {
     ---@type table<string, table<number, string>>
     rankToName = {},
 
-    ---@type table<{settingsKey: string, rank: number}>
+    ---@type table<{settingsKey: string, rank: number, check: CheckButton, label: FontString}>
     rankEntries = {},
 
     ---@type number|nil
@@ -127,110 +132,13 @@ local function handleCommand(input)
     end
 end
 
---- Options panel geometry (compact single-form layout, two columns).
-local PANEL_WIDTH = 660;
-local PANEL_HEIGHT = 400;
-local CONTENT_PADDING = 14;
-local ROW_HEIGHT = 24;
-local COLUMN_GAP = 16;
-
---- Create a boxed container (thin border + dark bg).
----@param parent Frame
----@param x number
----@param y number
----@param w number
----@param h number
----@return Frame
-local function createBox(parent, x, y, w, h)
-    local box = CreateFrame("Frame", nil, parent, "BackdropTemplate");
-    box:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y);
-    box:SetSize(w, h);
-    box:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 14,
-        insets = { left = 6, right = 6, top = 6, bottom = 6 },
-    });
-    box:SetBackdropColor(0, 0, 0, 0.4);
-    box:SetBackdropBorderColor(1, 1, 1, 0.35);
-    return box;
-end
-
---- Create a section header (yellow title) inside a parent at (x, y).
----@return FontString
-local function createHeader(parent, text, x, y)
-    local header = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge");
-    header:SetText(text);
-    header:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y);
-    header:SetTextColor(1, 0.82, 0, 1);
-    return header;
-end
-
---- Create a checkbox row at (x, y) inside parent; clicking the label toggles.
---- Returns the checkbox.
----@return CheckButton
-local function createCheckbox(parent, name, text, x, y, getter, setter)
-    local check = CreateFrame("CheckButton", name, parent, "UICheckButtonTemplate");
-    local label = _G[name .. "Text"];
-    label:SetText(text);
-    label:SetPoint("LEFT", check, "RIGHT", 4, 0);
-    check:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y);
-    check:SetChecked(getter() == true);
-
-    label:EnableMouse(true);
-    label:SetScript("OnMouseDown", function()
-        check:Click();
-    end);
-
-    check:SetScript("OnClick", function()
-        setter(check:GetChecked());
-    end);
-
-    return check;
-end
-
---- Create a slider with its text label ABOVE it (so long labels never clip).
---- OptionsSliderTemplate does NOT create a global "...Text" — the label is
---- built manually. The label wraps so long texts never clip.
----@return Slider
-local function createSlider(parent, name, text, x, y, min, max, step, getter, setter)
-    local label = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal");
-    label:SetText(text);
-    label:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y);
-    label:SetWidth(180);
-    label:SetJustifyH("LEFT");
-    label:SetWordWrap(true);
-
-    local slider = CreateFrame("Slider", name, parent, "OptionsSliderTemplate");
-    slider:SetMinMaxValues(min, max);
-    slider:SetValueStep(step);
-    slider:SetWidth(150);
-    slider:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y - 24);
-
-    local valueText = slider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall");
-    valueText:SetPoint("LEFT", slider, "RIGHT", 6, 0);
-
-    slider:SetScript("OnValueChanged", function(_, value)
-        valueText:SetText(("%.1f"):format(value));
-        setter(value);
-    end);
-
-    slider.Refresh = function()
-        local value = getter() or min;
-        slider:SetValue(value);
-        valueText:SetText(("%.1f"):format(value));
-    end;
-    slider.Refresh();
-
-    return slider;
-end
-
 --- Build the rank checkbox rows for the given category inside `box`.
 ---@param box Frame
 ---@param settingsKey string  singular ("healthstone")
 ---@param category string     plural catalog key ("healthstones")
 function OptionsUI:buildRankRows(box, settingsKey, category)
     local L = ACP.L;
+    local UI = ACP.UI;
     local catalog = ACP.Data.Items[category] or {};
     self.rankToIDs[settingsKey] = self.rankToIDs[settingsKey] or {};
     self.rankToName[settingsKey] = self.rankToName[settingsKey] or {};
@@ -256,87 +164,112 @@ function OptionsUI:buildRankRows(box, settingsKey, category)
     for i, rank in ipairs(sorted) do
         local ids = rankGroups[rank];
         local name = "ACPRankCheck" .. settingsKey .. rank;
-        local check = CreateFrame("CheckButton", name, box, "UICheckButtonTemplate");
-        check:SetPoint("TOPLEFT", box, "TOPLEFT", 10, -8 - (i - 1) * ROW_HEIGHT);
-        check:SetChecked(self:rankIsEnabled(settingsKey, rank));
+        local rankName = self.rankToName[settingsKey][rank];
 
-        local function applyRank()
-            local checked = check:GetChecked();
+        local check = UI.Checkbox(box, name, rankName,
+            UI.BOX_INSET, -8 - (i - 1) * UI.ROW_HEIGHT,
+            function() return self:rankIsEnabled(settingsKey, rank); end,
+            function(checked)
+                for _, id in ipairs(ids) do
+                    setSetting("items." .. settingsKey .. ".ranks." .. id, checked);
+                end
+            end,
+            (L.rankTooltip):format(rankName));
 
-            for _, id in ipairs(ids) do
-                setSetting("items." .. settingsKey .. ".ranks." .. id, checked);
-            end
-        end
-
-        check:SetScript("OnClick", applyRank);
-
-        local label = _G[name .. "Text"];
-        label:SetText(self.rankToName[settingsKey][rank]);
-        label:SetPoint("LEFT", check, "RIGHT", 4, 0);
-        label:EnableMouse(true);
-        label:SetScript("OnMouseDown", function()
-            check:SetChecked(not check:GetChecked());
-            applyRank();
-        end);
-
-        local entry = { check = check, settingsKey = settingsKey, rank = rank };
+        local entry = { check = check, label = check.label, settingsKey = settingsKey, rank = rank };
         self.rankEntries[#self.rankEntries + 1] = entry;
     end
 end
 
---- Build the "Autotrade" section content (two columns so the right side is used).
+--- Build the "General" subcategory: master switch, reset button, status line.
+---@param content Frame
+---@param w number
+---@param h number
+function OptionsUI:buildGeneral(content, w, h)
+    local L = ACP.L;
+    local UI = ACP.UI;
+    local Controls = self.Controls;
+    local PADDING = UI.PADDING;
+
+    -- Master switch. Toggling it re-syncs the panel so the Autotrade
+    -- controls gray out immediately.
+    Controls.enabled = UI.Checkbox(content, "ACPEnabledCheck",
+        L.enabledLabel, PADDING, -8,
+        function() return ACP.Settings:get("enabled"); end,
+        function(value)
+            setSetting("enabled", value);
+            self:refresh();
+        end,
+        L.enabledTooltip);
+
+    Controls.resetButton = UI.Button(content, L.resetButton,
+        PADDING, -44, 160, 24,
+        function()
+            ACP.Settings:reset();
+        end,
+        L.resetTooltip);
+end
+
+--- Build the "Autotrade" subcategory content (two columns so the right side
+--- is used): brackets + timing on the left, ranks on the right.
 ---@param content Frame
 ---@param w number
 ---@param h number
 function OptionsUI:buildAutotrade(content, w, h)
     local L = ACP.L;
+    local UI = ACP.UI;
     local Controls = self.Controls;
-    local colW = math.floor((w - CONTENT_PADDING * 2 - COLUMN_GAP) / 2);
+    local colW = math.floor((w - UI.PADDING * 2 - UI.GAP) / 2);
 
-    -- ---- LEFT COLUMN ----
-    local leftX = CONTENT_PADDING;
+    -- ---- LEFT COLUMN: brackets + timing ----
+    local leftX = UI.PADDING;
     local leftY = -4;
 
-    -- General box
-    createHeader(content, L.generalHeader, leftX, leftY);
+    -- Brackets box (3v3/5v5 stay permanently disabled — code kept for the future).
+    UI.Header(content, L.bracketsHeader, leftX, leftY);
     leftY = leftY - 28;
 
-    local generalBox = createBox(content, leftX, leftY, colW, 72);
-    Controls.enabled = createCheckbox(generalBox, "ACPEnabledCheck",
-        L.enabledLabel, 10, -8,
-        function() return ACP.Settings:get("enabled"); end,
-        function(value) setSetting("enabled", value); end);
-    leftY = leftY - 62 - 18;
-
-    -- Brackets box (3v3/5v5 disabled for now — code kept for the future).
-    createHeader(content, L.bracketsHeader, leftX, leftY);
-    leftY = leftY - 28;
-
-    local bracketBox = createBox(content, leftX, leftY, colW, 3 * ROW_HEIGHT + 22);
+    local bracketBox = UI.Box(content, leftX, leftY, colW, 3 * UI.ROW_HEIGHT + 22);
     Controls.brackets = {};
     local bracketY = -8;
 
     for _, bracket in ipairs({ "2v2", "3v3", "5v5" }) do
-        Controls.brackets[bracket] = createCheckbox(bracketBox, "ACPBracketCheck" .. bracket,
+        Controls.brackets[bracket] = UI.Checkbox(bracketBox, "ACPBracketCheck" .. bracket,
             bracket, 10, bracketY,
             function() return ACP.Settings:get("brackets." .. bracket); end,
-            function(value) setSetting("brackets." .. bracket, value); end);
-
-        -- Only 2v2 is enabled. The checkboxes stay visible but disabled.
-        if (bracket ~= "2v2") then
-            Controls.brackets[bracket]:Disable();
-            Controls.brackets[bracket]:SetAlpha(0.4);
-        end
-
-        bracketY = bracketY - ROW_HEIGHT;
+            function(value) setSetting("brackets." .. bracket, value); end,
+            L["bracket" .. bracket .. "Tooltip"]);
+        bracketY = bracketY - UI.ROW_HEIGHT;
     end
 
-    -- ---- RIGHT COLUMN ----
-    local rightX = leftX + colW + COLUMN_GAP;
+    -- Divider between the Brackets and Timing groups (Prat header pattern).
+    leftY = leftY - (3 * UI.ROW_HEIGHT + 22) - 20;
+    UI.Divider(content, leftX, leftY + 12, colW);
+
+    -- Timing box (sliders draw their own labels above them).
+    UI.Header(content, L.timingHeader, leftX, leftY);
+    leftY = leftY - 28;
+
+    local timingBox = UI.Box(content, leftX, leftY, colW, 128);
+
+    Controls.tradeDelay = UI.Slider(timingBox, "ACPTradeDelaySlider",
+        L.tradeDelayLabel, 16, -8, 0, 5, 0.5,
+        function() return ACP.Settings:get("tradeDelay"); end,
+        function(value) setSetting("tradeDelay", value); end,
+        L.tradeDelayTooltip);
+
+    Controls.gateSafety = UI.Slider(timingBox, "ACPGateSafetySlider",
+        L.gateSafetyLabel, 16, -64, 0, 60, 1,
+        function() return ACP.Settings:get("gateSafetySeconds"); end,
+        function(value) setSetting("gateSafetySeconds", value); end,
+        L.gateSafetyTooltip);
+
+    -- ---- RIGHT COLUMN: ranks ----
+    local rightX = leftX + colW + UI.GAP;
     local rightY = -4;
 
     -- Ranks box: built from the class's categories.
-    createHeader(content, L.ranksLabel, rightX, rightY);
+    UI.Header(content, L.ranksLabel, rightX, rightY);
     rightY = rightY - 28;
 
     local classItems = ACP.Data.Items.classItems;
@@ -346,46 +279,37 @@ function OptionsUI:buildAutotrade(content, w, h)
 
     -- 6 rank rows + comfortable top/bottom padding (no inner category label
     -- for a single category — it collided with the first row).
-    local ranksBox = createBox(content, rightX, rightY, colW, 6 * ROW_HEIGHT + 24);
-    local ranksInnerY = -12;
+    local ranksBox = UI.Box(content, rightX, rightY, colW, 6 * UI.ROW_HEIGHT + 24);
 
     for _, category in ipairs(categories) do
         local settingsKey = category:sub(1, -2);
         self:buildRankRows(ranksBox, settingsKey, category);
     end
 
-    rightY = rightY - (6 * ROW_HEIGHT + 24) - 20;
-
-    -- Timing box (sliders draw their own labels above them).
-    createHeader(content, L.timingHeader, rightX, rightY);
-    rightY = rightY - 28;
-
-    -- Two rows of label+slider; generous padding so nothing hugs the border.
-    local timingBox = createBox(content, rightX, rightY, colW, 128);
-
-    Controls.tradeDelay = createSlider(timingBox, "ACPTradeDelaySlider",
-        L.tradeDelayLabel, 16, -8, 0, 5, 0.5,
-        function() return ACP.Settings:get("tradeDelay"); end,
-        function(value) setSetting("tradeDelay", value); end);
-
-    Controls.gateSafety = createSlider(timingBox, "ACPGateSafetySlider",
-        L.gateSafetyLabel, 16, -64, 0, 60, 1,
-        function() return ACP.Settings:get("gateSafetySeconds"); end,
-        function(value) setSetting("gateSafetySeconds", value); end);
+    -- Apply the master-switch state (and the permanent 3v3/5v5 lock) now.
+    self:setAutotradeEnabled(ACP.Settings:get("enabled") == true);
 end
 
---- Build the settings: a top-level category "ArenaChillPrep" with subcategories
---- (Autotrade for now). Subcategories render in the Settings list
---- (Settings.RegisterCanvasLayoutSubcategory).
+--- Build the settings: a top-level category "ArenaChillPrep" with tabbed
+--- subcategories (General, Autotrade). Subcategories render in the Settings
+--- list (Settings.RegisterCanvasLayoutSubcategory).
 function OptionsUI:buildPanel()
     local L = ACP.L;
+    local UI = ACP.UI;
     local panel = CreateFrame("Frame", "ArenaChillPrepOptionsPanel", UIParent);
     panel.name = L.panelTitle;
     self.Panel = panel;
-    panel:SetSize(PANEL_WIDTH, PANEL_HEIGHT);
+    panel:SetSize(UI.PANEL_WIDTH, UI.PANEL_HEIGHT);
 
-    -- Subcategories (extensible: General/Abilities/Custom/Profiles later).
+    -- Subcategories (extensible: Profiles/Abilities later).
     self.Subcategories = {
+        {
+            key = "General",
+            title = L.generalSection,
+            build = function(_, content, w, h)
+                self:buildGeneral(content, w, h);
+            end,
+        },
         {
             key = "Autotrade",
             title = L.autotradeSection,
@@ -397,7 +321,7 @@ function OptionsUI:buildPanel()
 
     if (Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory
         and Settings.RegisterCanvasLayoutSubcategory) then
-        -- Modern API: parent category + subcategory.
+        -- Modern API: parent category + subcategories.
         local parentCategory = Settings.RegisterCanvasLayoutCategory(panel, panel.name);
         Settings.RegisterAddOnCategory(parentCategory);
         self.categoryID = parentCategory and parentCategory.ID;
@@ -405,7 +329,7 @@ function OptionsUI:buildPanel()
         for _, sub in ipairs(self.Subcategories) do
             local frame = CreateFrame("Frame", nil, UIParent);
             frame.name = sub.title;
-            frame:SetSize(PANEL_WIDTH, PANEL_HEIGHT);
+            frame:SetSize(UI.PANEL_WIDTH, UI.PANEL_HEIGHT);
 
             sub.frame = frame;
             sub.build(self, frame, frame:GetWidth(), frame:GetHeight());
@@ -415,10 +339,10 @@ function OptionsUI:buildPanel()
             sub.subCategoryID = subCategory and subCategory.ID;
         end
     elseif (InterfaceOptions_AddCategory) then
-        -- Legacy fallback: a single panel (no subcategories).
+        -- Legacy fallback: a single panel (no subcategories) — Autotrade only.
         local content = CreateFrame("Frame", nil, panel);
         content:SetPoint("TOPLEFT", panel, "TOPLEFT", 14, -18);
-        content:SetSize(PANEL_WIDTH - 28, PANEL_HEIGHT - 30);
+        content:SetSize(UI.PANEL_WIDTH - 28, UI.PANEL_HEIGHT - 30);
         self.Content = content;
         self:buildAutotrade(content, content:GetWidth(), content:GetHeight());
 
@@ -427,18 +351,96 @@ function OptionsUI:buildPanel()
     end
 end
 
+--- Apply the enabled state to all Autotrade controls: when the master switch
+--- is off every control is disabled and grayed. 3v3/5v5 stay permanently
+--- disabled on top of that (v0.1 decision).
+---@param flag boolean
+function OptionsUI:setAutotradeEnabled(flag)
+    local Controls = self.Controls;
+    local alpha = ACP.UI.DISABLED_ALPHA;
+
+    -- Brackets: 2v2 follows the master switch; 3v3/5v5 stay permanently locked.
+    if (Controls.brackets) then
+        for _, bracket in ipairs({ "2v2", "3v3", "5v5" }) do
+            local check = Controls.brackets[bracket];
+
+            if (check) then
+                local active = flag and bracket == "2v2";
+
+                if (active) then
+                    check:Enable();
+                else
+                    check:Disable();
+                end
+
+                check:SetAlpha(active and 1 or alpha);
+            end
+        end
+    end
+
+    -- Rank rows (label + checkbox).
+    for _, entry in ipairs(self.rankEntries) do
+        local check = entry.check;
+        local label = entry.label;
+
+        if (flag) then
+            check:Enable();
+            check:SetAlpha(1);
+
+            if (label) then
+                label:EnableMouse(true);
+                label:SetAlpha(1);
+            end
+        else
+            check:Disable();
+            check:SetAlpha(alpha);
+
+            if (label) then
+                label:EnableMouse(false);
+                label:SetAlpha(alpha);
+            end
+        end
+    end
+
+    -- Timing sliders (label + slider share the state).
+    for _, key in ipairs({ "tradeDelay", "gateSafety" }) do
+        local slider = Controls[key];
+
+        if (slider) then
+            if (flag) then
+                slider:Enable();
+                slider:SetAlpha(1);
+
+                if (slider.label) then
+                    slider.label:SetAlpha(1);
+                end
+            else
+                slider:Disable();
+                slider:SetAlpha(alpha);
+
+                if (slider.label) then
+                    slider.label:SetAlpha(alpha);
+                end
+            end
+        end
+    end
+end
+
 --- Re-sync all controls from Settings.
 function OptionsUI:refresh()
     local Controls = self.Controls;
+    local enabled = ACP.Settings:get("enabled") == true;
 
     if (Controls.enabled) then
-        Controls.enabled:SetChecked(ACP.Settings:get("enabled") == true);
+        Controls.enabled:SetChecked(enabled);
     end
 
     if (Controls.brackets) then
         for _, bracket in ipairs({ "2v2", "3v3", "5v5" }) do
-            if (Controls.brackets[bracket]) then
-                Controls.brackets[bracket]:SetChecked(ACP.Settings:get("brackets." .. bracket) == true);
+            local check = Controls.brackets[bracket];
+
+            if (check) then
+                check:SetChecked(ACP.Settings:get("brackets." .. bracket) == true);
             end
         end
     end
@@ -454,10 +456,12 @@ function OptionsUI:refresh()
     if (Controls.gateSafety) then
         Controls.gateSafety.Refresh();
     end
+
+    self:setAutotradeEnabled(enabled);
 end
 
 --- Open the options panel (works with both the modern and legacy Settings API).
---- Prefers the Autotrade subcategory if registered.
+--- Prefers the General subcategory if registered.
 function OptionsUI:openPanel()
     local targetID = self.categoryID;
 

@@ -41,6 +41,19 @@ function Tables:shallowCopy(source)
     return copy;
 end
 
+--- Deep copy of a table (nested tables are copied, not shared).
+---@param source table
+---@return table
+function Tables:deepCopy(source)
+    local copy = {};
+
+    for key, value in pairs(source) do
+        copy[key] = (type(value) == "table") and Tables:deepCopy(value) or value;
+    end
+
+    return copy;
+end
+
 ACP.Utils = ACP.Utils or {};
 ACP.Utils.Tables = Tables;
 

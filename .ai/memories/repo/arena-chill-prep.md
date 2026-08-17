@@ -7,6 +7,7 @@ Working record for AI agents. Source of truth is `.ai/`; this mirrors verified o
 - **v0.1.0 released** (2026-08-09) — Warlock only: auto-trades Healthstones of all ranks to the arena partner during arena preparation (TBC Anniversary, Interface 20506). Default bracket **2v2 only** (3v3/5v5 code kept, checkboxes locked in the UI for v0.1).
 - **Automated unit-test suite added** (2026-08-11): `Tests/` runs outside the game under LuaJIT (luaunit 3.5 + luacov 0.17). **169 tests, 96.45% line coverage** of all non-UI modules (bootstrap, Data, Utils, Classes logic); `OptionsUI.lua` excluded (UI code). Runner: `Tests/run-tests.ps1` (exit `0` = pass + coverage ≥ 90%).
 - **AI library migrated to `.ai/`** (2026-08-18): the agent toolkit moved from `.github/` to `.ai/` (same layout as the sibling addon BloomBuddy) — entry point `AGENTS.md` → `.ai/CONTEXT.md` → `.ai/ARCHITECTURE.md` → skills. `.github/` now holds only GitHub Actions workflows (none yet).
+- **Settings UI redesigned** (2026-08-18, per `.ai/docs/ui-redesign-plan.md`): `OptionsUI.lua` split into presentation (`Classes/UI/Widgets.lua` — `ACP.UI.*` widgets + geometry constants) and logic (subcategory registration, layout, sync). Panel has tabbed subcategories **General** (master switch, "Reset to defaults" button via `Settings:reset()`) and **Autotrade** (left column: brackets + timing with a divider between them; right column: ranks). Tooltips on every control; master switch off grays out Autotrade (3v3/5v5 stay permanently locked). **170 tests, 96.54% coverage.**
 
 ## Verified client facts (TBC Anniversary 2.5.x — verified in game phases 1–5 + working addons)
 
@@ -29,11 +30,14 @@ Working record for AI agents. Source of truth is `.ai/`; this mirrors verified o
 - **Bracket gate on `ACP_BUFF_GAINED`** via `Settings:get("brackets." .. bracket)`; default 2v2 only.
 - **Gate safety:** no new trades once `getRemainingTime() < gateSafetySeconds` (default 15); an open window is left untouched.
 - **`givenTo` is runtime-only** — never persist to `ArenaChillPrepDB`.
+- **`Settings:_init` deep-copies the defaults** (was `shallowCopy`): a shallow copy let `Settings:set` write THROUGH the shared nested tables and permanently corrupt `ACP.Data.DefaultSettings` — which also broke "Reset to defaults" (`reset()` deep-copies the (corrupted) defaults). `Settings:reset()` = `Data = Tables:deepCopy(DefaultSettings)` + persist + `OptionsUI:refresh()`. `Utils/Tables` gained `deepCopy`.
+- **UI widgets are presentation-only** (`ACP.UI.*`): callers pass `getter`/`setter` closures; tooltips attached via `GameTooltip` `ANCHOR_RIGHT`, `wrap=true`. `Checkbox`/`Slider` expose `.label` so the caller can gray out labels on disable.
 
 ## To verify in game (pending)
 
 - 3v3/5v5 end-to-end (code kept, UI locked for v0.1) — per-partner continuation when a second batch is crafted after the first trade.
 - Master healthstone item 22105 rank pairing with 19012/19013 (Major) on a max-rank Warlock client.
+- **UI redesign (2026-08-18):** General + Autotrade tabs render in the Settings list; tooltips on every control; "Reset to defaults" restores defaults; master switch off grays out Autotrade; divider between Brackets and Timing in the left column; `/console scriptErrors 1` clean. (A status line on General was tried and removed at the user's request.)
 
 ## Phases
 

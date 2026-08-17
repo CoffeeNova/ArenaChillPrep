@@ -28,6 +28,7 @@ Classes/ArenaPrep.lua
 Classes/Inventory.lua
 Classes/DeliveryController.lua
 Classes/TradeManager.lua
+Classes/UI/Widgets.lua
 Classes/OptionsUI.lua
 
 # Unit tests run OUTSIDE the game (LuaJIT) — see Tests/run-tests.ps1.

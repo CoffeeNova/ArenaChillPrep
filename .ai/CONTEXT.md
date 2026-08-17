@@ -73,6 +73,9 @@ ArenaChillPrep/
 │   ├── DeliveryController.lua# Orchestrator: prep → wait for items → trade
 │   ├── TradeManager.lua      # Trade window automation
 │   ├── Settings.lua          # SavedVariables wrapper
+│   ├── UI/
+│   │   └── Widgets.lua       # Reusable options widgets (ACP.UI.*: Box/Header/Divider/
+│   │                         #   Checkbox/Slider/Button/StatusLine + geometry constants)
 │   └── OptionsUI.lua         # Interface Options panel + /acp slash command
 └── Utils/                    # Utilities
     ├── Items.lua             # Item helpers (find by ID, counters, bag search)
@@ -152,7 +155,7 @@ The addon has an automated unit-test suite in `Tests/` that runs under **LuaJIT*
 **Gotchas when writing tests (see repo memory `arena-chill-prep-tests.md` for the full list):**
 
 - luaunit runs tests alphabetically across suites — every test must restore what it mutates (Settings DB, module state, globals, event bus).
-- `Settings:_init` uses `shallowCopy(defaults)` which SHARES nested tables — mutating `Settings.Data` corrupts `ACP.Data.DefaultSettings` permanently. Settings tests restore pristine defaults before each test.
+- `Settings:_init` deep-copies the defaults (the live `Data` is fully detached from `ACP.Data.DefaultSettings` — a historical shallow copy shared nested tables and could corrupt the defaults via `Settings:set`). Settings tests restore pristine defaults before each test.
 - Event-driven tests must call `H.resetAll()` first (events cascade across modules, e.g. `BAG_UPDATE` → `ACP_ITEMS_CHANGED` → DeliveryController).
 - `C_Container.GetContainerItemInfo` returns a TABLE; the legacy global returns the 11-value tuple — stubs must provide both.
 - `Utils/Items` prefers the GLOBAL `GetContainerNumSlots` but `C_Container` for `GetContainerItemInfo` — override all four container functions in bag stubs.
@@ -203,6 +206,17 @@ Gargul (same workspace) already implements exactly this flow — opening a trade
 
 ## Settings (v0.1)
 
+The Interface Options panel is a top-level category **ArenaChillPrep** with two tabbed
+subcategories (built with `Settings.RegisterCanvasLayoutSubcategory` — the legacy
+`InterfaceOptions_AddCategory` is nil on 2.5.5):
+
+- **General** — master switch (`enabled`) and the **"Reset to defaults"** button (`ACP.Settings:reset()`).
+- **Autotrade** — two columns: left = bracket checkboxes (2v2 active; 3v3/5v5 permanently disabled) + timing sliders with a header divider between them; right = rank checkboxes.
+- Every control has a tooltip; all strings go through `Data/Localization.lua`. Turning the
+  master switch off grays out all Autotrade controls.
+- Control creation lives in `Classes/UI/Widgets.lua` (`ACP.UI.*`, vanilla API only) — see
+  `ARCHITECTURE.md` §2.8.
+
 ```lua
 ArenaChillPrepDB = {
     enabled        = true,   -- master switch
@@ -224,3 +238,6 @@ ArenaChillPrepDB = {
     },
 }
 ```
+
+`Settings:reset()` restores a deep copy of `ACP.Data.DefaultSettings` and re-syncs the panel.
+`Utils/Tables` provides `deepCopy`/`deepMerge`/`shallowCopy`.

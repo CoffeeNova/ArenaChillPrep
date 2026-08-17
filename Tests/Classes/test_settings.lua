@@ -119,6 +119,25 @@ function testEnsureDefaultsFillsMissing()
     lu.assertEquals(target.items.healthstone.count, 1);
 end
 
+function testResetRestoresDefaults()
+    -- Arrange
+    freshSettings();
+    Settings:set("tradeDelay", 4);
+    Settings:set("enabled", false);
+    Settings:set("items.healthstone.ranks.19012", false);
+    -- Act
+    Settings:reset();
+    -- Assert
+    lu.assertEquals(Settings:get("tradeDelay"), 1.5);
+    lu.assertIsTrue(Settings:get("enabled"));
+    lu.assertIsTrue(Settings:get("items.healthstone.ranks.19012"));
+    lu.assertEquals(_G.ArenaChillPrepDB.tradeDelay, 1.5);
+    -- The reset Data must not share nested tables with the defaults.
+    Settings.Data.items.healthstone.ranks[19012] = false;
+    lu.assertIsTrue(ACP.Data.DefaultSettings.items.healthstone.ranks[19012]);
+    freshSettings();
+end
+
 -- Restore pure defaults after the suite so later suites see a clean DB.
 function teardownSuite()
     freshSettings();

@@ -26,8 +26,12 @@ function Settings:_init()
     self._initialized = true;
 
     local defaults = ACP.Data.DefaultSettings;
+    -- DEEP copy of the defaults as the merge base: if nested tables were
+    -- shared (shallowCopy), a later Settings:set would write THROUGH the
+    -- shared reference and permanently corrupt ACP.Data.DefaultSettings
+    -- (and with it "Reset to defaults"). Keep the live Data fully detached.
     self.Data = ACP.Utils.Tables:deepMerge(
-        ACP.Utils.Tables:shallowCopy(defaults),
+        ACP.Utils.Tables:deepCopy(defaults),
         ArenaChillPrepDB or {}
     );
 
@@ -145,6 +149,19 @@ function Settings:set(path, value)
     end
 
     current[segments[#segments]] = value;
+end
+
+--- Reset all settings to the defaults (used by the "Reset to defaults" button
+--- in the General subcategory). A DEEP copy is used so the live Data never
+--- shares nested tables with ACP.Data.DefaultSettings.
+--- Re-syncs the options panel if it is loaded.
+function Settings:reset()
+    self.Data = ACP.Utils.Tables:deepCopy(ACP.Data.DefaultSettings);
+    ArenaChillPrepDB = self.Data;
+
+    if (ACP.OptionsUI and ACP.OptionsUI.refresh) then
+        ACP.OptionsUI:refresh();
+    end
 end
 
 return ACP;
