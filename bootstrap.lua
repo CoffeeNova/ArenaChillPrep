@@ -20,8 +20,27 @@ ACP.debug = false;
 ACP.Data = ACP.Data or {};
 ACP.Utils = ACP.Utils or {};
 
+-- In-memory ring buffer for chat output (survives until /reload; the
+-- "blocked addon" popup can make chat un-copyable, so /acp dumplog reprints it).
+ACP.DEBUG_LOG_MAX = 200;
+ACP.DebugLog = {};
+
 -- Invisible frame that receives raw game events.
 ACP.Frame = CreateFrame("Frame", "ArenaChillPrepFrame");
+
+--- Append a formatted line to the in-memory debug log (ring buffer).
+---@param text string
+function ACP:log(text)
+    if (type(text) ~= "string") then
+        text = tostring(text);
+    end
+
+    table.insert(self.DebugLog, text);
+
+    if (#self.DebugLog > self.DEBUG_LOG_MAX) then
+        table.remove(self.DebugLog, 1);
+    end
+end
 
 --- Log a message to the default chat frame with the addon prefix.
 ---@param message string
@@ -30,7 +49,9 @@ function ACP:print(message, ...)
         return;
     end
 
-    DEFAULT_CHAT_FRAME:AddMessage(("|cffb48affACP|r: " .. tostring(message)):format(...));
+    local text = ("|cffb48affACP|r: " .. tostring(message)):format(...);
+    DEFAULT_CHAT_FRAME:AddMessage(text);
+    self:log(text);
 end
 
 --- Log a message to chat only when debug mode is on.
@@ -52,10 +73,15 @@ function ACP:_init()
 
     self.Events:_init(self.Frame);
     self.Settings:_init();
+    if (self.WorkflowSpellbook and self.WorkflowSpellbook._init) then
+        self.WorkflowSpellbook:_init();
+    end
     self.ArenaPrep:_init();
     self.Inventory:_init();
     self.TradeManager:_init();
+    self.WorkflowEngine:_init();
     self.DeliveryController:_init();
+    self.WorkflowBindings:_init();
     self.OptionsUI:_init();
 
     -- Handle /reload inside an arena.

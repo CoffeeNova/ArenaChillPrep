@@ -73,9 +73,12 @@ ArenaChillPrep/
 │   ├── DeliveryController.lua# Orchestrator: prep → wait for items → trade
 │   ├── TradeManager.lua      # Trade window automation
 │   ├── Settings.lua          # SavedVariables wrapper
+│   ├── WorkflowSpellbook.lua # Per-character spellbook scan + rank groups
 │   ├── UI/
-│   │   └── Widgets.lua       # Reusable options widgets (ACP.UI.*: Box/Header/Divider/
-│   │                         #   Checkbox/Slider/Button/StatusLine + geometry constants)
+│   │   ├── Widgets.lua       # Reusable options widgets (ACP.UI.*: Box/Header/Divider/
+│   │   │                     #   Checkbox/Slider/Button/StatusLine/Dropdown/TextInput/
+│   │   │                     #   ScrollFrame + geometry constants)
+│   │   └── WorkflowUI.lua    # "Workflows" subcategory content (ACP.WorkflowUI)
 │   └── OptionsUI.lua         # Interface Options panel + /acp slash command
 └── Utils/                    # Utilities
     ├── Items.lua             # Item helpers (find by ID, counters, bag search)
@@ -159,6 +162,9 @@ The addon has an automated unit-test suite in `Tests/` that runs under **LuaJIT*
 - Event-driven tests must call `H.resetAll()` first (events cascade across modules, e.g. `BAG_UPDATE` → `ACP_ITEMS_CHANGED` → DeliveryController).
 - `C_Container.GetContainerItemInfo` returns a TABLE; the legacy global returns the 11-value tuple — stubs must provide both.
 - `Utils/Items` prefers the GLOBAL `GetContainerNumSlots` but `C_Container` for `GetContainerItemInfo` — override all four container functions in bag stubs.
+- **New suites must be added to the `suites` list in `Tests/run_tests.lua`** — luaunit only runs suites it lists; an unlisted (but committed) suite silently never executes, so a broken module can pass the suite.
+- **`if (pcall(fn, ...)) then` is a bug** — `pcall` returns `(ok, result)`; an `if` only sees the first value (`ok`), so the branch fires whenever `fn` is callable regardless of its result. Capture the result: `local ok, res = pcall(fn, ...); if (ok and res) then`.
+- **A `function X:y()` written inside another method body is valid Lua** (it assigns `X.y` at runtime, not at load) and passes syntax-check; the method stays `nil` until that outer method executes. Keep all methods top-level.
 
 ---
 
@@ -177,6 +183,11 @@ The addon has an automated unit-test suite in `Tests/` that runs under **LuaJIT*
 11. **Bracket detection.** An addon **can** determine the bracket. Primary signal: your party size in the arena — in TBC you must queue with a group of exactly the bracket size, so `GetNumPartyMembers() + 1` is `2`, `3` or `5` (and the group is locked once inside, so it's stable during prep). Cross-check when available (client ≥ 2.5.1): `GetNumArenaOpponents() + 1` — number of opponents (1/2/4); it may return `0` briefly at arena load, hence the fallback. Note: the API is `GetNumPartyMembers` in TBC — `GetNumSubgroupMembers` only exists from 5.0.4+.
 12. **Gate-open countdown — use `CHAT_MSG_BG_SYSTEM_NEUTRAL`, not the aura.** Verified on 2.5.5: the prep buff's aura reports `duration=0` / `expirationTime=0` (treated as infinite), so `expirationTime - GetTime()` is useless. The working approach — proven by ArenaAnalytics and sArena_Reloaded on the same client — is listening to `CHAT_MSG_BG_SYSTEM_NEUTRAL` and matching the localized countdown messages ("One minute until the Arena battle begins!" = 60, "Thirty seconds..." = 30, "Fifteen seconds..." = 15, "The Arena battle has begun!" = 0; the map lives in `ACP.Data.Constants.ARENA_COUNTDOWN_MESSAGES`). Track `countdownEndTime = GetTime() + N`, seeded with `+60 s` on buff gain as a fallback. `GetBattlefieldTimeRemaining()` is a battleground match timer, not the pre-gate countdown.
 13. **One trade per partner, not per prep.** The addon keeps a runtime `givenTo` set (reset on `ACP_BUFF_LOST`) of partners who already received items and never re-trades with them. In 2v2 this means one trade per prep; in 3v3/5v5 a newly crafted item goes to the next eligible partner. `givenTo` is runtime-only — never persist it to `ArenaChillPrepDB`.
+14. **Workflow step targeting (verified 2026-08-22).** Party-targeted workflow steps cast DIRECTLY at the unit — never through the player's current target or `TargetUnit` token swaps (that path buffed the PLAYER live, and calling `TargetUnit` from insecure code popped "blocked action" on the first party cast — it was removed). Player spells: the secure cast button gets `SetAttribute("unit", step.target)` (M6 ActionBook pattern); pet abilities: `[@unit]` macro conditionals (`/cast [@party1] Fire Shield` — the legacy `[target=party1]` form does not redirect pet casts on 20506); `checkGates` pauses with `reasonNoTarget` when the unit doesn't exist (solo test, raid group, member left) instead of mis-buffing. Always reset the `unit` attribute in `clearKeyCast`/`equipItem`/`petAbility` — a stale party unit retargets later steps.
+15. **One run per prep/test.** After DONE the workflow key is a no-op — the engine never auto-restarts. A fresh run starts on `ACP_BUFF_LOST` (new arena) or by re-issuing `/acp workflowtest N` (the command calls `reset()` before `start()`).
+16. **One press = start + cast (verified design 2026-08-22).** Each workflow slot's Key Bindings UI key is pointed at a per-slot hidden secure button `ACPWorkflowButton<N>` via `SetOverrideBindingClick(owner, true, key, button)` — a priority override (BetterFishing pattern on 20506) that does **NOT displace the player's command binding**: `GetBindingKey` keeps returning the real binding, so the Blizzard Key Bindings UI and the Workflows-tab key capture keep working (the earlier transient `SetBindingClick` takeover broke key assignment entirely and was removed). The button's **PreClick** starts/resumes the workflow and arms the step, and the SAME press's click casts it. `applySlotBindings` (full resync: clear overrides → re-apply from the real binding table) runs on PLAYER_LOGIN / UPDATE_BINDINGS / PLAYER_REGEN_ENABLED / late-binding retry; overrides are dropped while the Blizzard Key Bindings UI is shown. Pet macros bake `/cast [pet:<type>,@unit] <ability>` — the `[pet:<type>]` conditional makes a press a no-op when that pet is not out (no interruption/"blocked action"), which is how Sacrifice is pressed during the Summon Felhunter cast.
+17. **Workflow chat messages are debug-only.** started/resumed/paused/done, press prompts, pause reasons and the cast-dropped diagnostic all go through `ACP:debugPrint` (`/acp debug` to see them); `/acp status` and slash-command responses stay visible.
+18. **Pet-ability verification (2026-08-22).** The client silently swallows a pet ability pressed EARLY in the player's cast (Sacrifice at +2s of a 6s summon did nothing; +5s fired, live-verified). The engine does NOT mark the pet step done on the press itself — `isPetAbilityApplied(step)` checks the ability's effect (buff present on the target by NAME, e.g. Fire Shield / Sacrifice shield, or the Voidwalker gone while the cast is in progress); an unverified press keeps the step armed (`armPetVerify` poll every 0.1s) — the user spams the key until the ability finally applies near the end of the cast.
 
 ---
 
@@ -206,14 +217,55 @@ Gargul (same workspace) already implements exactly this flow — opening a trade
 
 ## Settings (v0.1)
 
-The Interface Options panel is a top-level category **ArenaChillPrep** with two tabbed
+The Interface Options panel is a top-level category **ArenaChillPrep** with three tabbed
 subcategories (built with `Settings.RegisterCanvasLayoutSubcategory` — the legacy
 `InterfaceOptions_AddCategory` is nil on 2.5.5):
 
-- **General** — master switch (`enabled`) and the **"Reset to defaults"** button (`ACP.Settings:reset()`).
+- **General** — master switch (`enabled`), the **"Enable workflow engine"** switch
+  (`workflows.enabled`) and the **"Reset to defaults"** button (`ACP.Settings:reset()`).
+- **Workflows** — stored in `ArenaChillPrepCharDB`, so each character has an independent
+  workflow profile. Built around the "pick a slot → assemble/check the sequence → fire by key"
+  scenario: a status line on top (engine state + slot state + step count; the bound key is
+  shown ONLY in the editable Key field below — no duplicate status strings; when the global
+  engine is OFF it explains why and offers an "Enable workflow engine" CTA button — the tab
+  does NOT gray out), a **Workflow defaults** block (`skipIfBuffedDefault` + short
+  description; movement pause is always enforced and is not configurable), a **Workflow
+  editor** block (labeled `Workflow:` selector + `+ Add workflow`, `Name:` input + `Enabled`
+  checkbox, `Key:` keybind capture + `Clear` button with unbound/capturing/bound visual
+  states), and a **Steps** table that fills the remaining panel height (table header +
+  scrollable rows: two-line spell cell with name + `SpellID: <id>` (pet-ability steps show a `pet ability` hint), fixed Target and
+  "Skip if buffed" columns that render an explicit `Not available` state when a parameter
+  does not apply, right-aligned `↑`/`↓`/`Delete` actions). `equipItem` rows show the item
+  name + `ItemID: <id>` instead (no rank/target/skip). "+ Add step" lists each learned
+  spell as a plain name (no rank/SpellID decoration) grouped by category, built from a
+  scan of the ACTIVE character's spellbook (never a hardcoded class list — the Warlock
+  static fallback is class-gated and the scan re-runs on PLAYER_LOGIN + SPELLS_CHANGED);
+  the **Pet abilities** category (Fire Shield [Imp, party-castable], Sacrifice [Voidwalker]) and the **Equip items** category
+  (spellstones → `equipItem` steps) appear only for Warlocks, and stone-creating spells are
+  listed per rank with the stone's name (`Create Master Healthstone`, `Create Major
+  Healthstone`, …); every step uses the highest learned rank (no rank selection — the old
+  per-step rank dropdown was removed). Five slots exist by default; `+ Add workflow` adds slots up
+  to the bindable maximum. Slots 1-2 ship pre-defined with the user's m6 arena-prep
+  macros as steps (slot 1 "2s full prep": Imp → HS → Spellstone → Felhunter → Soul Link →
+  HS → Fel Armor → UB/DI x2 → equip Master Spellstone; slot 2 "Full prep (Voidwalker)":
+  same without Soul Link, Voidwalker instead of Felhunter; duplicate Create Healthstone
+  macro entries are stored as 27230/22105 (the max rank), and they complete instantly once
+  the Master stone is in bags. On TBC 2.5.5 the stone ranks COEXIST (a Warlock can create
+  each rank; the client does NOT auto-upgrade a rank-5 cast), so a step stores its exact
+  rank and is "done" only when THAT rank's stone is present). Healthstone ranks 1-5 exist
+  as historical ID PAIRS (e.g. Major = 19012/19013 — see `Data/Items.lua`); the client
+  conjures one variant per rank (rank 5 = 19013, live-verified 2026-08-22), so the
+  engine's createItem completion/goal-met checks accept BOTH variants of the step's rank
+  (`stoneRanks[spellID].itemIDs`) — but never a different rank's stone.
+  Layout uses a vertical cursor (each section returns its own height) so it adapts to the
+  actual panel size — no hardcoded offsets. Built by `Classes/UI/WorkflowUI.lua` and
+  `Classes/WorkflowSpellbook.lua`
+  (`ACP.WorkflowUI`); all edits write to Settings immediately.
 - **Autotrade** — two columns: left = bracket checkboxes (2v2 active; 3v3/5v5 permanently disabled) + timing sliders with a header divider between them; right = rank checkboxes.
 - Every control has a tooltip; all strings go through `Data/Localization.lua`. Turning the
-  master switch off grays out all Autotrade controls.
+  master switch off grays out all Autotrade controls; turning the workflow engine off shows
+  a status warning + an "Enable workflow engine" CTA on the Workflows tab (controls stay
+  editable — edits persist regardless of the gate).
 - Control creation lives in `Classes/UI/Widgets.lua` (`ACP.UI.*`, vanilla API only) — see
   `ARCHITECTURE.md` §2.8.
 
@@ -240,4 +292,13 @@ ArenaChillPrepDB = {
 ```
 
 `Settings:reset()` restores a deep copy of `ACP.Data.DefaultSettings` and re-syncs the panel.
+Account-wide settings remain in `ArenaChillPrepDB`; workflow settings are routed through
+`ACP.Settings` to `ArenaChillPrepCharDB.workflows` and migrate from the old account-wide
+`ArenaChillPrepDB.workflows` table on first load. `workflows.slotCount` starts at 5; new
+slots are created empty. `WORKFLOW_MAX_SLOTS` is the fixed binding capacity, while the UI
+only renders slots up to the current character's `slotCount`.
+The workflows branch merges **per-slot replace** (a saved `definitions[N]` wins wholesale —
+deepMerge would index-merge the steps arrays into hybrids), `ensureDefaults` is array-aware,
+and saved definitions that still match the OLD placeholder defaults exactly are replaced by
+the new m6-macro defaults on load (user edits are never touched).
 `Utils/Tables` provides `deepCopy`/`deepMerge`/`shallowCopy`.

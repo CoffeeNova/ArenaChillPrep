@@ -5,6 +5,7 @@
 ## Version: 0.1.0
 ## License: MIT
 ## SavedVariables: ArenaChillPrepDB
+## SavedVariablesPerCharacter: ArenaChillPrepCharDB
 ## DefaultState: enabled
 
 # Load order matters: no libraries, so bootstrap first, then Data/Utils, then Classes.
@@ -17,6 +18,7 @@ Data/Constants.lua
 Data/Items.lua
 Data/DefaultSettings.lua
 Data/Localization.lua
+Data/Workflows.lua
 
 Utils/Tables.lua
 Utils/Items.lua
@@ -24,12 +26,22 @@ Utils/Timers.lua
 
 Classes/Events.lua
 Classes/Settings.lua
+Classes/WorkflowSpellbook.lua
 Classes/ArenaPrep.lua
 Classes/Inventory.lua
 Classes/DeliveryController.lua
 Classes/TradeManager.lua
+Classes/WorkflowEngine.lua
+Classes/WorkflowBindings.lua
 Classes/UI/Widgets.lua
+Classes/UI/WorkflowUI.lua
 Classes/OptionsUI.lua
+
+# Bindings.xml (Key Bindings entries) is NOT listed here: on 20506 the client
+# auto-loads a file named Bindings.xml from the addon folder. Listing it in the
+# TOC makes the client parse it a second time with the UI XML parser, producing
+# "Unrecognized XML: Binding" errors per entry (verified 2026-08-19). It is
+# shipped to the client by deploy.ps1 / -Bundle as part of the game artifacts.
 
 # Unit tests run OUTSIDE the game (LuaJIT) — see Tests/run-tests.ps1.
 # Nothing in Tests/ is loaded by the game.

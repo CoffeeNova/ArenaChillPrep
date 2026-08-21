@@ -1,0 +1,62 @@
+<Bindings>
+	<Binding name="ACP_WORKFLOW1" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW1()
+	</Binding>
+	<Binding name="ACP_WORKFLOW2" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW2()
+	</Binding>
+	<Binding name="ACP_WORKFLOW3" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW3()
+	</Binding>
+	<Binding name="ACP_WORKFLOW4" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW4()
+	</Binding>
+	<Binding name="ACP_WORKFLOW5" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW5()
+	</Binding>
+	<Binding name="ACP_WORKFLOW6" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW6()
+	</Binding>
+	<Binding name="ACP_WORKFLOW7" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW7()
+	</Binding>
+	<Binding name="ACP_WORKFLOW8" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW8()
+	</Binding>
+	<Binding name="ACP_WORKFLOW9" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW9()
+	</Binding>
+	<Binding name="ACP_WORKFLOW10" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW10()
+	</Binding>
+	<Binding name="ACP_WORKFLOW11" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW11()
+	</Binding>
+	<Binding name="ACP_WORKFLOW12" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW12()
+	</Binding>
+	<Binding name="ACP_WORKFLOW13" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW13()
+	</Binding>
+	<Binding name="ACP_WORKFLOW14" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW14()
+	</Binding>
+	<Binding name="ACP_WORKFLOW15" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW15()
+	</Binding>
+	<Binding name="ACP_WORKFLOW16" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW16()
+	</Binding>
+	<Binding name="ACP_WORKFLOW17" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW17()
+	</Binding>
+	<Binding name="ACP_WORKFLOW18" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW18()
+	</Binding>
+	<Binding name="ACP_WORKFLOW19" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW19()
+	</Binding>
+	<Binding name="ACP_WORKFLOW20" category="BINDING_HEADER_ACP">
+		ACP_WORKFLOW20()
+	</Binding>
+</Bindings>

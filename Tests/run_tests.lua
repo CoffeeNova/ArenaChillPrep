@@ -16,8 +16,9 @@ covRunner.init({
     reportfile = ROOT .. "/luacov.report.out",
     runreport = true,
     include = {"bootstrap$", "Data/Constants$", "Data/Items$", "Data/DefaultSettings$", "Data/Localization$",
-               "Utils/Tables$", "Utils/Items$", "Utils/Timers$", "Classes/Events$", "Classes/Settings$",
-               "Classes/ArenaPrep$", "Classes/Inventory$", "Classes/DeliveryController$", "Classes/TradeManager$"}
+               "Data/Workflows$", "Utils/Tables$", "Utils/Items$", "Utils/Timers$", "Classes/Events$",
+               "Classes/Settings$", "Classes/ArenaPrep$", "Classes/Inventory$", "Classes/DeliveryController$",
+               "Classes/TradeManager$", "Classes/WorkflowSpellbook$"}
 });
 
 -- ---- luaunit (exposed as global `lu` for the suites) ----
@@ -49,9 +50,10 @@ ACP.DeliveryController:_init();
 -- Data/ Utils/ Classes/. Order matters (some suites capture file-scope state,
 -- e.g. test_deliverycontroller saves the real Timers).
 local suites = {"test_bootstrap", "Data/test_constants", "Data/test_items", "Data/test_defaultsettings",
-                "Data/test_localization", "Utils/test_tables", "Utils/test_utils_items", "Utils/test_timers",
-                "Classes/test_events", "Classes/test_settings", "Classes/test_arenaprep", "Classes/test_inventory",
-                "Classes/test_deliverycontroller", "Classes/test_trademanager"};
+                "Data/test_localization", "Data/test_workflows", "Utils/test_tables", "Utils/test_utils_items",
+                "Utils/test_timers", "Classes/test_events", "Classes/test_settings", "Classes/test_arenaprep",
+                 "Classes/test_inventory", "Classes/test_deliverycontroller", "Classes/test_trademanager",
+                 "Classes/test_workflowengine"};
 for _, suite in ipairs(suites) do
     dofile(ROOT .. "/" .. suite .. ".lua");
 end

@@ -61,6 +61,39 @@ ACP.Data.Constants = {
     -- Safety ticker interval while the prep buff is active.
     -- UNIT_AURA does not always fire when the buff fades on TBC — known quirk.
     BUFF_CHECK_TICK = 1.0,
+
+    -- Workflow engine (Phase 8+). Five slots are shown by default; the
+    -- binding/XML capacity supports additional character-local slots.
+    WORKFLOW_DEFAULT_SLOTS = 5,
+    WORKFLOW_MAX_SLOTS = 20,
+
+    -- Poll interval (seconds) for the GCD wait between instant-cast steps.
+    WORKFLOW_GCD_TICK = 0.1,
+
+    -- Safety timeout (seconds) for a cast-time step waiting for completion.
+    WORKFLOW_CAST_TIMEOUT = 10,
+
+    -- Name of the hidden SecureActionButtonTemplate that casts cast-time
+    -- steps when the user presses the bound hotkey (SetBindingClick target).
+    WORKFLOW_BUTTON_NAME = "ACPWorkflowButton",
+
+    -- Soul Shard item ID (verified: Questie tbcItemDB.lua, SoulShardManager,
+    -- SoulSort). Gates summon/createItem steps that consume a shard.
+    SOUL_SHARD_ITEM_ID = 6265,
+
+    -- Target unit tokens a `cast` step may use (2v2/3v3/5v5).
+    WORKFLOW_TARGETS = { "player", "party1", "party2", "party3", "party4" },
+
+    -- Step type strings (see Data/Workflows.validateStep).
+    WORKFLOW_STEP_CAST = "cast",
+    WORKFLOW_STEP_SUMMON = "summon",
+    WORKFLOW_STEP_CREATE_ITEM = "createItem",
+    WORKFLOW_STEP_EQUIP_ITEM = "equipItem",
+    -- A pet ability cast by the player's current pet (e.g. Imp Fire Shield,
+    -- Voidwalker Sacrifice). The pet casts it independently — the engine
+    -- exempts it from the "player is casting" gate so it can be applied
+    -- DURING the previous step's cast.
+    WORKFLOW_STEP_PET = "pet",
 };
 
 return ACP;

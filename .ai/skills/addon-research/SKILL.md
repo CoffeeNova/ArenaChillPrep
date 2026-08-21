@@ -22,6 +22,11 @@ Working addons on THIS client are the best documentation: every pattern in this 
 | Settings / subcategories | `Auctionator/.../PanelConfig.lua`, `MiniFramework.lua`, `idTip/idTip.lua`, `CurseArena/CurseArena.lua` | RegisterCanvasLayoutCategory / Subcategory / AddOnCategory; OpenToCategory |
 | Item IDs / names | `Questie/Database/Classic/classicItemDB.lua`, `TBC/tbcItemDB.lua`, `Wotlk/wotlkItemDB.lua` | format: `[22105] = {'Master Healthstone', nil, ..., 70, 60, 0, 0, 8}` (name, ..., level, ...) |
 | Aura iteration (positional vs object) | `BigDebuffs` (UnitBuff=GetBuffDataByIndex on non-mainline), `sArena` (GetAuraDataByIndex) | confirms which API returns what on 2.5.5 |
+| Spell casting (out of combat) | `TrackingEye/Features/Core.lua` (CastSpellByID, GetSpellCooldown, CanCast gate) | CastSpellByID works OOC; GetSpellCooldown returns 5 values |
+| Cast lifecycle events | `GatherMate2/Collector.lua` (UNIT_SPELLCAST_SENT modern signature), `ItemRack/ItemRack.lua` (registers START/STOP/SUCCEEDED/INTERRUPTED/FAILED), `TrackingEye` (SUCCEEDED arg2=spellID — ambiguous, see wow-api-20506 skill) | events registered on 20506; use as signals, not data |
+| Secure/combat casting | `M6/Libs/ActionBook/ActionBook.lua` (SetAttribute spell+unit on SecureActionButtonTemplate) | the only combat-safe cast path; one action per hardware event |
+| Movement detection | `BetterFishing` (IsPlayerMoving), `NovaWorldBuffs` (PLAYER_STOPPED_MOVING) | pause-on-move workflows |
+| Keybindings | `BetterFishing` (BINDING_NAME_*, GetBindingKey), `GatherMate2/Config.lua` (SetBinding/GetBindingAction/SaveBindings), `ItemRack` (SetBindingClick + secure button + RegisterForClicks("AnyDown")) | full keybinding API works on 20506 |
 | General UI patterns | `BetterBlizzFrames/gui.lua`, `Leatrix_Maps/`, `WeakAuras/` | GetChildren() wrapping, sliders, checkboxes, scrollframes |
 
 ## Recommended workflow

@@ -49,3 +49,15 @@ function testConstantsBagsAndTick()
     lu.assertEquals(C.NUM_BAGS, 5);
     lu.assertEquals(C.BUFF_CHECK_TICK, 1.0);
 end
+
+function testConstantsWorkflowSteps()
+    -- Arrange
+    -- Act
+    -- Assert
+    lu.assertEquals(C.WORKFLOW_STEP_CAST, "cast");
+    lu.assertEquals(C.WORKFLOW_STEP_SUMMON, "summon");
+    lu.assertEquals(C.WORKFLOW_STEP_CREATE_ITEM, "createItem");
+    lu.assertEquals(C.WORKFLOW_STEP_EQUIP_ITEM, "equipItem");
+    lu.assertEquals(C.WORKFLOW_DEFAULT_SLOTS, 5);
+    lu.assertEquals(C.WORKFLOW_MAX_SLOTS, 20);
+end

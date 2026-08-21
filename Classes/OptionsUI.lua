@@ -63,7 +63,7 @@ end
 ---@param value any
 local function setSetting(path, value)
     ACP.Settings:set(path, value);
-    ArenaChillPrepDB = ACP.Settings.Data;
+    ACP.Settings:persist();
 end
 
 --- Handler for the /acp slash command.
@@ -75,6 +75,11 @@ local function handleCommand(input)
     if (command == "status") then
         -- Initialized + state.
         ACP:print(L.status, tostring(ACP._initialized), tostring(ACP.DeliveryController.state));
+
+        -- Workflow engine state (Phase 8).
+        if (ACP.WorkflowEngine) then
+            ACP:print("workflow: %s", ACP.WorkflowEngine:getStatus());
+        end
 
         -- Buff / instance / bracket / remaining (gate countdown).
         local ArenaPrep = ACP.ArenaPrep;
@@ -125,6 +130,61 @@ local function handleCommand(input)
     elseif (command == "debug") then
         ACP.debug = not ACP.debug;
         ACP:print(L.debugToggled, ACP.debug and "on" or "off");
+    elseif (command == "dumplog") then
+        -- Reprint the in-memory chat log (handy when the "blocked addon"
+        -- popup makes the chat un-copyable). Snapshot so re-printed lines
+        -- do not re-append and grow the buffer.
+        local snapshot = {};
+        for i = 1, #ACP.DebugLog do
+            snapshot[i] = ACP.DebugLog[i];
+        end
+
+        if (#snapshot == 0) then
+            ACP:print("debug log empty");
+        else
+            ACP:print("debug log (%d entries):", #snapshot);
+
+            for i = 1, #snapshot do
+                ACP:print("[%d] %s", i, snapshot[i]);
+            end
+        end
+    elseif (command == "workflow") then
+        -- /acp workflow <N> — start/resume workflow slot N (test driver; the
+        -- real trigger is the key binding added in Phase 9).
+        local slot = tonumber((input or ""):match("^%s*%S+%s+(%S+)") or "1") or 1;
+
+        if (ACP.WorkflowEngine) then
+            ACP.WorkflowEngine:start(slot);
+        end
+    elseif (command == "workflowtest") then
+        -- DEBUG: run a workflow slot OUTSIDE an arena (bypasses the prep
+        -- requirement in start() and the notArena gate). Diagnostic only.
+        -- Each command starts ONE fresh run: the engine is reset first, so
+        -- re-issuing the command re-runs the workflow from step 1 (a plain
+        -- key press after DONE does NOT restart — 2026-08-22).
+        local slot = tonumber((input or ""):match("^%s*%S+%s+(%S+)") or "1") or 1;
+
+        if (ACP.WorkflowEngine) then
+            ACP.WorkflowEngine.debugBypass = true;
+            ACP.WorkflowEngine:reset();
+            ACP.WorkflowEngine:start(slot);
+        end
+    elseif (command == "bind") then
+        -- /acp bind <key> — set/change the workflow hotkey (SetBindingClick
+        -- to the engine's secure cast button). /acp bind off clears it.
+        local key = (input or ""):match("^%s*%S+%s+(%S+)");
+
+        if (ACP.WorkflowEngine and key and key ~= "off" and key ~= "none") then
+            ACP.Settings:set("workflows.hotkey", key);
+            ACP.WorkflowEngine:applyBinding();
+            ACP:print(L.workflow.keyBound, key);
+        elseif (ACP.WorkflowEngine) then
+            ACP.Settings:set("workflows.hotkey", nil);
+            ACP.WorkflowEngine:clearBinding();
+            ACP:print(L.workflow.keyCleared);
+        else
+            ACP:print(L.unknownCommand, command);
+        end
     elseif (command == "help" or command == "") then
         ACP:print(L.help);
     else
@@ -181,7 +241,8 @@ function OptionsUI:buildRankRows(box, settingsKey, category)
     end
 end
 
---- Build the "General" subcategory: master switch, reset button, status line.
+--- Build the "General" subcategory: master switch, workflow engine switch,
+--- reset button, status line.
 ---@param content Frame
 ---@param w number
 ---@param h number
@@ -202,8 +263,19 @@ function OptionsUI:buildGeneral(content, w, h)
         end,
         L.enabledTooltip);
 
+    -- Workflow engine master switch (Phase 10). Toggling it grays out the
+    -- controls on the Workflows tab via setWorkflowsEnabled (in refresh()).
+    Controls.workflowsEnabled = UI.Checkbox(content, "ACPWorkflowsEnabledCheck",
+        L.workflow.engineEnabledLabel, PADDING, -38,
+        function() return ACP.Settings:get("workflows.enabled"); end,
+        function(value)
+            setSetting("workflows.enabled", value);
+            self:refresh();
+        end,
+        L.workflow.engineEnabledTooltip);
+
     Controls.resetButton = UI.Button(content, L.resetButton,
-        PADDING, -44, 160, 24,
+        PADDING, -70, 160, 24,
         function()
             ACP.Settings:reset();
         end,
@@ -311,6 +383,13 @@ function OptionsUI:buildPanel()
             end,
         },
         {
+            key = "Workflows",
+            title = L.workflow.section,
+            build = function(_, content, w, h)
+                self:buildWorkflows(content, w, h);
+            end,
+        },
+        {
             key = "Autotrade",
             title = L.autotradeSection,
             build = function(_, content, w, h)
@@ -329,10 +408,20 @@ function OptionsUI:buildPanel()
         for _, sub in ipairs(self.Subcategories) do
             local frame = CreateFrame("Frame", nil, UIParent);
             frame.name = sub.title;
-            frame:SetSize(UI.PANEL_WIDTH, UI.PANEL_HEIGHT);
+            local panelH = (sub.key == "Workflows") and UI.WORKFLOW_PANEL_HEIGHT or UI.PANEL_HEIGHT;
+            frame:SetSize(UI.PANEL_WIDTH, panelH);
 
             sub.frame = frame;
             sub.build(self, frame, frame:GetWidth(), frame:GetHeight());
+
+            -- The settings system may invoke these when the subcategory is
+            -- shown/committed — re-sync the controls so e.g. the Workflows
+            -- keybind display is current after switching tabs.
+            frame.OnCommit = function() end;
+            frame.OnDefault = function() end;
+            frame.OnRefresh = function()
+                self:refresh();
+            end;
 
             local subCategory = Settings.RegisterCanvasLayoutSubcategory(parentCategory, frame, sub.title);
             Settings.RegisterAddOnCategory(subCategory);
@@ -348,6 +437,26 @@ function OptionsUI:buildPanel()
 
         InterfaceOptions_AddCategory(panel);
         self.categoryID = nil;
+    end
+end
+
+--- Build the "Workflows" subcategory content (delegated to ACP.WorkflowUI).
+---@param content Frame
+---@param w number
+---@param h number
+function OptionsUI:buildWorkflows(content, w, h)
+    if (ACP.WorkflowUI and ACP.WorkflowUI.build) then
+        ACP.WorkflowUI:build(content, w, h);
+    end
+end
+
+--- Sync the Workflows status banner/CTA when the workflow engine gate changes.
+--- The editor remains usable while the engine is disabled so users can still
+--- prepare and persist a workflow.
+---@param flag boolean
+function OptionsUI:setWorkflowsEnabled(flag)
+    if (ACP.WorkflowUI and ACP.WorkflowUI.setEnabled) then
+        ACP.WorkflowUI:setEnabled(flag);
     end
 end
 
@@ -457,7 +566,16 @@ function OptionsUI:refresh()
         Controls.gateSafety.Refresh();
     end
 
+    if (Controls.workflowsEnabled) then
+        Controls.workflowsEnabled:SetChecked(ACP.Settings:get("workflows.enabled") == true);
+    end
+
+    if (ACP.WorkflowUI and ACP.WorkflowUI.isBuilt) then
+        ACP.WorkflowUI:refresh();
+    end
+
     self:setAutotradeEnabled(enabled);
+    self:setWorkflowsEnabled(ACP.Settings:get("workflows.enabled") == true);
 end
 
 --- Open the options panel (works with both the modern and legacy Settings API).

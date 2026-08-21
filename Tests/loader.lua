@@ -19,6 +19,7 @@ load("Data/Constants.lua");
 load("Data/Items.lua");
 load("Data/DefaultSettings.lua");
 load("Data/Localization.lua");
+load("Data/Workflows.lua");
 load("Utils/Tables.lua");
 load("Utils/Items.lua");
 load("Utils/Timers.lua");
@@ -28,6 +29,9 @@ load("Classes/ArenaPrep.lua");
 load("Classes/Inventory.lua");
 load("Classes/DeliveryController.lua");
 load("Classes/TradeManager.lua");
+load("Classes/WorkflowSpellbook.lua");
+load("Classes/WorkflowEngine.lua");
+load("Classes/WorkflowBindings.lua");
 load("Classes/UI/Widgets.lua");
 load("Classes/OptionsUI.lua");
 

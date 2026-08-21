@@ -119,6 +119,96 @@ function testEnsureDefaultsFillsMissing()
     lu.assertEquals(target.items.healthstone.count, 1);
 end
 
+function testMigratePlaceholderDefinitions()
+    -- Arrange: a character saved under the OLD placeholder defaults.
+    _G.ArenaChillPrepCharDB = {
+        workflows = {
+            enabled = true,
+            slotCount = 5,
+            skipIfBuffedDefault = true,
+            definitions = {
+                [1] = {
+                    enabled = true,
+                    name = "2s full prep",
+                    steps = {
+                        { type = "cast", spellID = 28176, target = "player", skipIfBuffed = true },
+                        { type = "summon", spellID = 712 },
+                        { type = "createItem", spellID = 6201, itemID = 22105 }
+                    }
+                },
+                [2] = { enabled = false, name = "Prep with a Priest", steps = {} }
+            }
+        }
+    };
+    Settings._initialized = false;
+    -- Act
+    Settings:_init();
+    -- Assert: both placeholders were replaced by the new m6-macro defaults.
+    local def1 = Settings:get("workflows.definitions.1");
+    lu.assertEquals(def1.name, "2s full prep");
+    lu.assertEquals(#def1.steps, 14);
+    lu.assertEquals(def1.steps[1].type, "summon");
+    lu.assertEquals(def1.steps[1].spellID, 688);
+    lu.assertEquals(def1.steps[14].type, "equipItem");
+    lu.assertEquals(def1.steps[14].itemID, 22646);
+    local def2 = Settings:get("workflows.definitions.2");
+    lu.assertEquals(def2.name, "Full prep (Voidwalker)");
+    lu.assertEquals(#def2.steps, 13);
+    lu.assertEquals(def2.steps[7].spellID, 697);
+    freshSettings();
+end
+
+function testMigrateSkipsEditedDefinitions()
+    -- Arrange: a user-edited workflow must never be replaced by the migration.
+    _G.ArenaChillPrepCharDB = {
+        workflows = {
+            definitions = {
+                [1] = { enabled = true, name = "my custom", steps = { { type = "cast", spellID = 5697 } } }
+            }
+        }
+    };
+    Settings._initialized = false;
+    -- Act
+    Settings:_init();
+    -- Assert
+    local def1 = Settings:get("workflows.definitions.1");
+    lu.assertEquals(def1.name, "my custom");
+    lu.assertEquals(#def1.steps, 1);
+    lu.assertEquals(def1.steps[1].spellID, 5697);
+    freshSettings();
+end
+
+function testMigrateStepSpellIDsRewritesSoulLink()
+    -- Arrange: a character saved a Soul Link step with the old mislabeled
+    -- spellID 6307 (the Imp's Blood Pact). It must be rewritten to the real
+    -- Soul Link talent spell 19028; other steps are untouched.
+    _G.ArenaChillPrepCharDB = {
+        workflows = {
+            definitions = {
+                [3] = {
+                    enabled = true,
+                    name = "test",
+                    steps = {
+                        { type = "cast", spellID = 6307, spellName = "Soul Link", target = "player", skipIfBuffed = true },
+                        { type = "pet", spellID = 27269, spellName = "Fire Shield", target = "player" }
+                    }
+                }
+            }
+        }
+    };
+    Settings._initialized = false;
+    -- Act
+    Settings:_init();
+    -- Assert
+    local def3 = Settings:get("workflows.definitions.3");
+    lu.assertEquals(def3.steps[1].spellID, 19028);
+    lu.assertEquals(def3.steps[1].spellName, "Soul Link");
+    lu.assertEquals(def3.steps[2].spellID, 27269);
+    -- Cleanup: drop the injected character DB so later suites see no residue.
+    _G.ArenaChillPrepCharDB = nil;
+    freshSettings();
+end
+
 function testResetRestoresDefaults()
     -- Arrange
     freshSettings();

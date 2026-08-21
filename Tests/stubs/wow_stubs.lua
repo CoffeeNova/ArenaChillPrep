@@ -20,11 +20,16 @@ _G.__stub = {
     partyCount = 0,
     unitExists = true,
     unitIsUnit = false,
+    unitGUID = nil,       -- string returned by UnitGUID("pet") (e.g. "Creature-0-...")
     inCombat = false,
     dead = false,
     tradeFrameShown = false,
     chatMessages = {},
     cTimerCallbacks = {},  -- { cb = fn, cancelled = bool }
+    spellbookTabs = {},    -- { [tab] = { name, icon, offset, numSpells, isGuild } }
+    spellbookItems = {},   -- { [slot] = { itemType, spellID, name, rankText, passive } }
+    spellInfo = {},        -- { [spellID] = name } for GetSpellInfo
+    knownSpells = {},      -- { [spellID] = true } for IsPlayerSpell (tests mutate)
 };
 
 -- ---- time (captured at file scope by Events/ArenaPrep/TradeManager) ----
@@ -54,9 +59,13 @@ _G.C_UnitAuras = {
 --      captured by DeliveryController; UnitClass/UnitName/GetNumPartyMembers
 --      read at call time) ----
 _G.UnitExists = function(unit)
+    if (unit == "pet" or unit == "player") then
+        return true;
+    end
     local n = tonumber((unit or ""):match("^party(%d+)$"));
     return n ~= nil and n <= _G.__stub.partyCount;
 end;
+_G.UnitGUID = function(unit) return _G.__stub.unitGUID end;
 _G.UnitIsUnit = function() return _G.__stub.unitIsUnit end;
 _G.UnitAffectingCombat = function() return _G.__stub.inCombat end;
 _G.UnitIsDeadOrGhost = function() return _G.__stub.dead end;
@@ -83,6 +92,67 @@ _G.C_Item = {
     DoesItemExist = function() return false end,
 };
 _G.ItemLocation = { CreateFromBagAndSlot = function() return {} end };
+
+-- ---- spellbook (read at call time; WorkflowSpellbook scan) ----
+-- Legacy TBC spellbook API: GetNumSpellTabs / GetSpellTabInfo (offset +
+-- numSpells per tab) / GetSpellBookItemInfo / GetSpellBookItemName /
+-- IsPassiveSpell all take the bookType STRING "spell"/"pet" (BOOKTYPE_SPELL —
+-- the 20506 form; "player" is retail-only and must return nothing here).
+-- Default state is an empty book so scan() exercises the static fallback;
+-- tests populate __stub.spellbookTabs / __stub.spellbookItems / spellInfo.
+_G.GetNumSpellTabs = function()
+    return #_G.__stub.spellbookTabs;
+end;
+_G.GetSpellTabInfo = function(tab)
+    local t = _G.__stub.spellbookTabs[tab];
+    if (not t) then
+        return nil;
+    end
+    return t.name, t.icon, t.offset, t.numSpells, t.isGuild;
+end;
+_G.GetSpellBookItemInfo = function(slot, bookType)
+    if (bookType ~= "spell") then
+        return nil;
+    end
+    local item = _G.__stub.spellbookItems[slot];
+    if (not item) then
+        return nil;
+    end
+    return item.itemType, item.spellID;
+end;
+_G.GetSpellBookItemName = function(slot, bookType)
+    if (bookType ~= "spell") then
+        return nil;
+    end
+    local item = _G.__stub.spellbookItems[slot];
+    if (not item) then
+        return nil;
+    end
+    return item.name, item.rankText;
+end;
+_G.IsPassiveSpell = function(slot, bookType)
+    if (bookType ~= "spell") then
+        return false
+    end
+    local item = _G.__stub.spellbookItems[slot];
+    return item and item.passive == true or false
+end;
+-- IsPlayerSpell is captured at file scope by several modules; a mutable stub
+-- (reads _G.__stub.knownSpells) lets tests control which ranks are "known"
+-- without replacing the global. Default: nothing known.
+_G.IsPlayerSpell = function(id)
+    return _G.__stub.knownSpells[id] == true
+end;
+_G.GetSpellInfo = function(idOrName)
+    if (type(idOrName) == "number") then
+        local name = _G.__stub.spellInfo[idOrName];
+        if (not name) then
+            return nil;
+        end
+        return name, "", 1, 0, 0, 0, idOrName;
+    end
+    return nil;
+end;
 
 -- ---- trade (TradeFrame/ERR_TRADE_COMPLETE captured at file scope) ----
 _G.TradeFrame = { IsShown = function() return _G.__stub.tradeFrameShown end };
@@ -131,6 +201,13 @@ function FrameMethods:EnableMouse() end;
 function FrameMethods:SetChecked() end;
 function FrameMethods:GetChecked() return false end;
 function FrameMethods:Click() end;
+function FrameMethods:SetAttribute(attr, value)
+    self.attributes = self.attributes or {};
+    self.attributes[attr] = value;
+end;
+function FrameMethods:RegisterForClicks() end;
+function FrameMethods:Hide() end;
+function FrameMethods:Show() end;
 function FrameMethods:Disable() end;
 function FrameMethods:SetAlpha() end;
 function FrameMethods:SetMinMaxValues() end;
@@ -156,4 +233,62 @@ function _G.CreateFrame(frameType, name, parent, template)
         };
     end
     return frame;
+end;
+
+-- ---- keybindings (WorkflowEngine hotkey, read at call time) ----
+-- Real-client semantics: binding a key to a button CLICK removes any command
+-- binding on that key (and vice versa). resolveCastKey/takeoverCastKey depend
+-- on this — after a takeover, GetBindingKey(command) must be nil.
+function _G.SetBindingClick(key, buttonName)
+    _G.__stub.bindingClicks = _G.__stub.bindingClicks or {};
+    _G.__stub.bindingClicks[key] = buttonName;
+    if (_G.__stub.bindingKeys) then
+        for command, boundKey in pairs(_G.__stub.bindingKeys) do
+            if (boundKey == key) then
+                _G.__stub.bindingKeys[command] = nil;
+            end
+        end
+    end
+    if (_G.__stub.bindingActions) then
+        _G.__stub.bindingActions[key] = nil;
+    end
+end;
+function _G.SetBinding(key, command)
+    _G.__stub.bindings = _G.__stub.bindings or {};
+    _G.__stub.bindings[key] = command;
+    _G.__stub.bindingKeys = _G.__stub.bindingKeys or {};
+    _G.__stub.bindingActions = _G.__stub.bindingActions or {};
+    if (command == "" or command == nil) then
+        for cmd, boundKey in pairs(_G.__stub.bindingKeys) do
+            if (boundKey == key) then
+                _G.__stub.bindingKeys[cmd] = nil;
+            end
+        end
+        _G.__stub.bindingActions[key] = nil;
+    else
+        _G.__stub.bindingKeys[command] = key;
+        _G.__stub.bindingActions[key] = command;
+    end
+end;
+function _G.SaveBindings() end;
+function _G.GetCurrentBindingSet() return 1 end;
+-- key -> action (used by takeoverCastKey's guard).
+function _G.GetBindingAction(key)
+    return _G.__stub.bindingActions and _G.__stub.bindingActions[key];
+end;
+-- command -> key (used by resolveCastKey).
+function _G.GetBindingKey(command)
+    return _G.__stub.bindingKeys and _G.__stub.bindingKeys[command];
+end;
+
+-- ---- override bindings (SetOverrideBindingClick/ClearOverrideBindings) ----
+-- Real-client semantics: an override intercepts the key WITHOUT displacing
+-- the player's command binding — bindingKeys/bindingActions stay intact
+-- (that is the whole point vs SetBindingClick).
+function _G.SetOverrideBindingClick(owner, isPriority, key, buttonName)
+    _G.__stub.overrideClicks = _G.__stub.overrideClicks or {};
+    _G.__stub.overrideClicks[key] = buttonName;
+end;
+function _G.ClearOverrideBindings(owner)
+    _G.__stub.overrideClicks = {};
 end;

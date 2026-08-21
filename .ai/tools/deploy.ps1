@@ -60,6 +60,12 @@ foreach ($rel in $tocFiles) {
 $license = Join-Path $repoRoot "LICENSE"
 if (Test-Path $license) { $files += $license }
 
+# Bindings.xml is auto-loaded by the client (filename convention) and MUST NOT
+# be listed in the TOC (that would double-parse it and raise "Unrecognized XML:
+# Binding" errors on 20506). Ship it explicitly so deploy/-Bundle stay complete.
+$bindingsXml = Join-Path $repoRoot "Bindings.xml"
+if (Test-Path $bindingsXml) { $files += $bindingsXml }
+
 if ($files.Count -eq 0) { throw "No files to deploy (empty TOC?)" }
 
 # --- Version from the TOC ----------------------------------------------------
