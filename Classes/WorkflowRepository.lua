@@ -221,27 +221,23 @@ function WorkflowRepository:buildStep(entry, group)
     return step;
 end
 
---- Append a step to a workflow slot, resolved from the Add Step menu key
---- (a spellbook group name, a specific rank/pet spellID, or an
---- "item:<id>" equip-item key). Returns whether a step was added.
----@param slot number
+--- Resolve an Add Step menu key (a spellbook group name, a specific
+--- rank/pet spellID, or an "item:<id>" equip-item key) into a NEW step built
+--- by the factory. Shared by addStep (append) and replaceStep (in place).
 ---@param spellKey any
----@return boolean changed
-function WorkflowRepository:addStep(slot, spellKey)
-    local steps = self:getSteps(slot);
-
+---@return table|nil step
+function WorkflowRepository:resolveNewStep(spellKey)
     -- Equip-item entries use the "item:<id>" key convention.
     local equipItemID = tonumber(type(spellKey) == "string" and spellKey:match("^item:(%d+)$") or nil);
 
     if (equipItemID) then
         local entry = ACP.Data.Workflows and ACP.Data.Workflows:getEquipItem(equipItemID);
-        steps[#steps + 1] = {
+
+        return {
             type = ACP.Data.Constants.WORKFLOW_STEP_EQUIP_ITEM,
             itemID = equipItemID,
             itemName = (entry and entry.name) or nil
         };
-        ACP.Settings:persist();
-        return true;
     end
 
     local entry;
@@ -255,17 +251,59 @@ function WorkflowRepository:addStep(slot, spellKey)
         group = ACP.WorkflowSpellbook and ACP.WorkflowSpellbook:getGroup(spellKey);
 
         if (not group or not group.entries or #group.entries == 0) then
-            return false;
+            return nil;
         end
 
         entry = group.entries[#group.entries];
     end
 
     if (not entry) then
+        return nil;
+    end
+
+    return self:buildStep(entry, group);
+end
+
+--- Append a step to a workflow slot, resolved from the Add Step menu key.
+--- Returns whether a step was added.
+---@param slot number
+---@param spellKey any
+---@return boolean changed
+function WorkflowRepository:addStep(slot, spellKey)
+    local step = self:resolveNewStep(spellKey);
+
+    if (not step) then
         return false;
     end
 
-    steps[#steps + 1] = self:buildStep(entry, group);
+    local steps = self:getSteps(slot);
+    steps[#steps + 1] = step;
+    ACP.Settings:persist();
+    return true;
+end
+
+--- Replace the step at `index` with a NEW step resolved from `spellKey`
+--- (the same Add Step menu key convention). The row keeps its position; the
+--- new step is rebuilt by the factory, so its type/target/skip come from the
+--- defaults of the NEW spell. Returns whether it was replaced.
+---@param slot number
+---@param index number
+---@param spellKey any
+---@return boolean changed
+function WorkflowRepository:replaceStep(slot, index, spellKey)
+    local steps = self:getSteps(slot);
+
+    if (not steps[index]) then
+        return false;
+    end
+
+    local step = self:resolveNewStep(spellKey);
+
+    if (not step) then
+        return false;
+    end
+
+    steps[index] = step;
     ACP.Settings:persist();
     return true;
 end

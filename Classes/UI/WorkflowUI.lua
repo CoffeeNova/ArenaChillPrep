@@ -24,6 +24,7 @@ local tostring = _G.tostring;
 local select = _G.select;
 local table_concat = _G.table.concat;
 local math_max = _G.math.max;
+local math_min = _G.math.min;
 local math_ceil = _G.math.ceil;
 local GetSpellInfo = _G.GetSpellInfo;
 local UnitClass = _G.UnitClass;
@@ -33,7 +34,7 @@ local SECTION_GAP = 8;
 local STATUS_H = 24;
 local DEFAULTS_H = 62;
 local EDITOR_H = 114;
-local STEP_ROW_H = 48;
+local STEP_ROW_H = 40;
 local STEP_HEADER_H = 22;
 local STEP_LIST_FLOOR = 40;
 local STEP_NUM_W = 24;
@@ -300,6 +301,76 @@ local function spellItems()
     return items;
 end
 
+-- -- -- spell-cell dropdown sizing -- --
+
+local SPELL_CELL_CHROME = 26; -- dropdown arrow + internal padding
+
+local dropdownMeasureFont;
+
+--- Measure with the dropdown's own font (the collapsed label is rendered in
+--- GameFontHighlightSmallLeft) so the computed width matches what the client
+--- will actually draw.
+local function dropdownTextWidth(text)
+    if (not dropdownMeasureFont) then
+        local holder = CreateFrame("Frame");
+        local font = _G.GameFontHighlightSmallLeft and "GameFontHighlightSmallLeft" or "GameFontNormal";
+        dropdownMeasureFont = holder:CreateFontString(nil, "ARTWORK", font);
+        dropdownMeasureFont:Hide();
+    end
+
+    dropdownMeasureFont:SetText(text);
+    return dropdownMeasureFont:GetStringWidth();
+end
+
+local spellCellWidthCache;
+
+--- Width of the step-row spell dropdown: exactly as wide as the longest
+--- possible collapsed label (spell name, per-rank stone label, the
+--- "<name> (<pet>)" pet label, or an equip-item name) plus the dropdown
+--- chrome — so the control never spills into the Target column. The cache is
+--- reset on ACP_SPELLBOOK_CHANGED (the catalog can change).
+---@return number
+local function spellCellWidth()
+    if (spellCellWidthCache) then
+        return spellCellWidthCache;
+    end
+
+    local L = ACP.L.workflow;
+    local maxW = dropdownTextWidth("#00000");
+
+    for _, item in ipairs(spellItems()) do
+        if (not item.isTitle and item.label) then
+            maxW = math_max(maxW, dropdownTextWidth(item.label));
+        end
+    end
+
+    -- Pet rows render "%s (%s)" (the menu shows the plain name only).
+    for _, group in ipairs(spellGroups().pets or {}) do
+        for _, entry in ipairs(group.entries or {}) do
+            local name = entry.name or group.name;
+
+            if (name) then
+                maxW = math_max(maxW, dropdownTextWidth((L.petStepLabel):format(name, entry.pet or "pet")));
+            end
+        end
+    end
+
+    -- Equip rows render the localized item name when it is available.
+    local equipList = ACP.Data.Workflows and ACP.Data.Workflows.equipItems or {};
+
+    for _, entry in ipairs(equipList) do
+        maxW = math_max(maxW, dropdownTextWidth(entry.name));
+        local ok, name = pcall(GetItemInfo, entry.itemID);
+
+        if (ok and name) then
+            maxW = math_max(maxW, dropdownTextWidth(name));
+        end
+    end
+
+    spellCellWidthCache = maxW + SPELL_CELL_CHROME;
+    return spellCellWidthCache;
+end
+
 local function workflowItems()
     local items = {};
 
@@ -373,6 +444,14 @@ function WorkflowUI:addStep(spellKey)
     end
 end
 
+--- Change an existing step to a different spell/item IN PLACE (the row keeps
+--- its position; the new step is rebuilt by the repository's step factory).
+function WorkflowUI:replaceStep(index, spellKey)
+    if (ACP.WorkflowRepository:replaceStep(self.SelectedSlot, index, spellKey)) then
+        self:refresh();
+    end
+end
+
 function WorkflowUI:removeStep(index)
     if (ACP.WorkflowRepository:removeStep(self.SelectedSlot, index)) then
         self:refresh();
@@ -441,40 +520,39 @@ function WorkflowUI:buildStepRow(parent, rowW, slot, index, count, step, y)
     number:SetText(tostring(index));
     number:SetTextColor(0.55, 0.55, 0.55, 1);
 
-    -- Spell cell: line 1 = name, line 2 = spellID.
+    -- Spell cell: a dropdown showing the current spell (or item) — selecting
+    -- an entry from the SAME catalog as "+ Add step" REPLACES this step in
+    -- place, so the row keeps its position. Single-line cell — the SpellID/
+    -- ItemID metadata and the "pet ability" hint were removed as redundant.
     local spellX = STEP_NUM_W;
     local spellW = rowW - STEP_NUM_W - STEP_TARGET_W - STEP_SKIP_W - actionLayout().total;
 
-    local name = row:CreateFontString(nil, "ARTWORK", "GameFontNormal");
-    name:SetPoint("TOPLEFT", row, "TOPLEFT", spellX, -4);
-    name:SetWidth(spellW - TARGET_X_SHIFT);
-    name:SetJustifyH("LEFT");
-    name:SetText(stepSpellLabel(step, entry));
-    name:SetTextColor(0.9, 0.9, 0.9, 1);
-    row.name = name;
-
-    local idText = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall");
-    idText:SetPoint("TOPLEFT", row, "TOPLEFT", spellX, -26);
+    local labelText;
 
     if (step.type == C.WORKFLOW_STEP_EQUIP_ITEM) then
-        -- Equip-item steps: the row shows the ITEM, not a spell. Line 1 keeps
-        -- the item name (GetItemInfo fallback: the stored catalog name) and
-        -- line 2 shows the item ID; rank/target/skip stay "Not available".
-        name:SetText(itemLabel(step));
-        idText:SetText((L.itemIDLabel):format(step.itemID));
+        -- Equip-item steps: the cell shows the ITEM, not a spell (GetItemInfo
+        -- fallback: the stored catalog name).
+        labelText = itemLabel(step);
     elseif (step.type == C.WORKFLOW_STEP_PET) then
         -- Pet-ability steps: cast by the player's pet (e.g. Imp Fire Shield,
-        -- Voidwalker Sacrifice). Line 2 marks it as a pet ability.
+        -- Voidwalker Sacrifice) — the pet name is part of the label.
         local petName = entry and (entry.pet or "pet") or "pet";
-        name:SetText((L.petStepLabel):format(spellLabel(step.spellID, entry and entry.name), petName));
-        idText:SetText(L.petStepHint);
+        labelText = (L.petStepLabel):format(spellLabel(step.spellID, entry and entry.name), petName);
     else
-        name:SetText(stepSpellLabel(step, entry));
-        idText:SetText((L.spellIDLabel):format(step.spellID));
+        labelText = stepSpellLabel(step, entry);
     end
 
-    idText:SetTextColor(0.5, 0.5, 0.5, 1);
-    row.spellIDText = idText;
+    -- 22 px tall so the dropdown matches the single-line rhythm: its label
+    -- centers where the name FontString used to sit. The width fits the
+    -- longest supported label (+ chrome), so it never spills into Target.
+    local spell = UI.Dropdown(row, ("ACPWorkflowStepSpell%d_%d"):format(slot, index), labelText, spellX, 0,
+        math_min(spellCellWidth(), spellW - TARGET_X_SHIFT), spellItems, function()
+            return nil;
+        end, function(value)
+            self:replaceStep(index, value);
+        end, L.changeStepTooltip);
+    spell:SetHeight(22);
+    controls[#controls + 1] = spell;
 
     -- Target column (fixed width; disabled state for non-party-castable steps).
     -- The dropdown is pulled LEFT of the spell column end (TARGET_X_SHIFT) so
@@ -834,10 +912,13 @@ function WorkflowUI:build(content, w, h)
 
     -- The spellbook re-scan refreshes the Add Step list (and step rows) via an
     -- event instead of a reverse UI call from WorkflowSpellbook (W6). Only
-    -- listening while the panel is actually built.
+    -- listening while the panel is actually built. The spell-cell width cache
+    -- is reset here too (the catalog — and with it the longest label — can
+    -- change).
     if (not self._spellbookListener) then
         self._spellbookListener = true;
         ACP.Events:register("WorkflowUI.SPELLBOOK_CHANGED", "ACP_SPELLBOOK_CHANGED", function()
+            spellCellWidthCache = nil;
             self:refresh();
         end);
     end

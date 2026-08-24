@@ -251,10 +251,15 @@ subcategories (built with `Settings.RegisterCanvasLayoutSubcategory` — the leg
   editor** block (labeled `Workflow:` selector + `+ Add workflow`, `Name:` input + `Enabled`
   checkbox, `Key:` keybind capture + `Clear` button with unbound/capturing/bound visual
   states), and a **Steps** table that fills the remaining panel height (table header +
-  scrollable rows: two-line spell cell with name + `SpellID: <id>` (pet-ability steps show a `pet ability` hint), fixed Target and
-  "Skip if buffed" columns that render an explicit `Not available` state when a parameter
-  does not apply, right-aligned `↑`/`↓`/`Delete` actions). `equipItem` rows show the item
-  name + `ItemID: <id>` instead (no rank/target/skip). "+ Add step" lists each spell as a
+  scrollable single-line rows: the spell cell is a **dropdown** — pick a different
+  spell/item from the same catalog as "+ Add step" to REPLACE the step in place (the row
+  keeps its position; the new step is rebuilt by the factory and gets its own defaults;
+  the dropdown is sized to the longest supported label so it never spills into the Target
+  column), fixed Target and "Skip if buffed" columns that render an explicit
+  `Not available` state when a parameter does not apply, right-aligned `↑`/`↓`/`Delete`
+  actions). `equipItem` rows show the item name instead (no rank/target/skip). The
+  per-step `SpellID:`/`ItemID:` metadata line and the "pet ability" hint were REMOVED as
+  redundant (2026-08-24). "+ Add step" lists each spell as a
   plain name (no rank/SpellID decoration) grouped by category, built from the STATIC
   Warlock catalog (the live spellbook scan was REMOVED — gotcha #20; the class-gated
   catalog rebuilds on PLAYER_LOGIN + SPELLS_CHANGED);
