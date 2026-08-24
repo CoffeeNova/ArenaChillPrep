@@ -494,6 +494,120 @@ function testOnItemsChangedNotActive()
     lu.assertIsFalse(H.hasTimer("TradeDelay"));
 end
 
+function testShouldTakeOverInboundTrade()
+    -- Arrange
+    State.PartyCount = 1;
+    State.Bracket = "2v2";
+    State.Remaining = 45;
+    State.BuffActive = true;
+    State.InCombat = false;
+    installStubs();
+    resetController();
+    DC:setState("ACTIVE");
+    _G.UnitName = function(unit)
+        if (unit == "party1") then return "Alice"; end
+        return "Player";
+    end;
+    ACP.TradeManager.partnerUnit = "Alice";
+    -- Act
+    local ok = DC:shouldTakeOverInboundTrade();
+    -- Assert
+    lu.assertIsTrue(ok);
+    _G.UnitName = function() return "Player" end;
+end
+
+function testShouldTakeOverInboundTradeNotActive()
+    -- Arrange
+    installStubs();
+    resetController();
+    DC:setState("IDLE");
+    ACP.TradeManager.partnerUnit = "Alice";
+    -- Act
+    local ok = DC:shouldTakeOverInboundTrade();
+    -- Assert
+    lu.assertIsFalse(ok);
+end
+
+function testShouldTakeOverInboundTradeNonTeammate()
+    -- Arrange
+    State.PartyCount = 1;
+    State.Bracket = "2v2";
+    State.Remaining = 45;
+    State.BuffActive = true;
+    installStubs();
+    resetController();
+    DC:setState("ACTIVE");
+    ACP.TradeManager.partnerUnit = "Stranger";
+    -- Act
+    local ok = DC:shouldTakeOverInboundTrade();
+    -- Assert
+    lu.assertIsFalse(ok);
+end
+
+function testShouldTakeOverInboundTradeCombat()
+    -- Arrange
+    State.PartyCount = 1;
+    State.Bracket = "2v2";
+    State.Remaining = 45;
+    State.BuffActive = true;
+    State.InCombat = true;
+    installStubs();
+    resetController();
+    DC:setState("ACTIVE");
+    ACP.TradeManager.partnerUnit = "Alice";
+    -- Act
+    local ok = DC:shouldTakeOverInboundTrade();
+    -- Assert
+    lu.assertIsFalse(ok);
+    State.InCombat = false;
+end
+
+function testOnTradeOpenedInbound()
+    -- Arrange
+    State.PartyCount = 1;
+    State.Bracket = "2v2";
+    State.Remaining = 45;
+    State.BuffActive = true;
+    State.Counts = readyCounts();
+    installStubs();
+    resetController();
+    DC:setState("ACTIVE");
+    ACP.TradeManager.partnerUnit = "Alice";
+    H.SyncTimers.Handles["TradeDelay"] = { cb = function() end };
+    -- Act
+    DC:onTradeOpened("Alice");
+    -- Assert
+    lu.assertEquals(DC.currentPartner, "Alice");
+    lu.assertEquals(DC.state, "TRADING");
+    lu.assertIsFalse(H.hasTimer("TradeDelay"));
+end
+
+function testOnItemsChangedTradingRefillsQueue()
+    -- Arrange
+    State.PartyCount = 1;
+    State.Bracket = "2v2";
+    State.Remaining = 45;
+    State.BuffActive = true;
+    State.Counts = readyCounts();
+    installStubs();
+    resetController();
+    DC:setState("TRADING");
+    _G.__stub.tradeFrameShown = true;
+    ACP.Settings:set("items.healthstone.enabled", true);
+    ACP.Settings:set("items.healthstone.count", 1);
+    local origGetCount = ACP.Inventory.getCount;
+    ACP.Inventory.getCount = function(_, itemID)
+        if (itemID == 22105) then return 1; end
+        return 0;
+    end;
+    -- Act
+    DC:onItemsChanged();
+    -- Assert
+    lu.assertEquals(#ACP.TradeManager.ItemsToAdd, 1);
+    ACP.Inventory.getCount = origGetCount;
+    _G.__stub.tradeFrameShown = false;
+end
+
 -- ---- event-driven handlers (registered in _init) ----
 
 local function reinitDC()

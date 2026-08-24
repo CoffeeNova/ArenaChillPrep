@@ -189,16 +189,15 @@ function TradeManager:_init()
 
     -- The trade window opened.
     ACP.Events:register("TradeManager.TRADE_SHOW", "TRADE_SHOW", function()
-        -- If we didn't initiate this trade (manual open), record the partner
-        -- from the window so completion is attributed correctly — but do NOT
-        -- auto-place items into a window the player opened himself.
+        -- Record the partner from the window (for a partner-initiated trade we
+        -- did not set partnerUnit ourselves).
         if (not self.partnerUnit) then
             self.partnerUnit = UnitName("NPC", true) or "unknown";
         end
 
         ACP:debugPrint("trade window shown (partner: %s)", tostring(self.partnerUnit));
 
-        -- Only auto-place if WE initiated this trade.
+        -- We initiated this trade: place items as designed.
         if (self.trading) then
             -- Cancel the one-shot open timeout directly AND via the event
             -- (belt and suspenders — never let a stale timer kill a live
@@ -207,6 +206,18 @@ function TradeManager:_init()
             ACP.Utils.Timers:cancel("TradeOpen");
             ACP.Events:fire("ACP_TRADE_OPENED", self.partnerUnit);
 
+            self:startItemQueue();
+            return;
+        end
+
+        -- Inbound trade: someone opened a trade with us. If the controller is
+        -- actively prepping, take over the already-open window and deliver the
+        -- prep items into it instead of trying to start a second trade.
+        if (ACP.DeliveryController:shouldTakeOverInboundTrade()) then
+            ACP:debugPrint("taking over inbound trade with %s", tostring(self.partnerUnit));
+            self.trading = true;
+            ACP.Utils.Timers:cancel("TradeOpen");
+            ACP.Events:fire("ACP_TRADE_OPENED", self.partnerUnit);
             self:startItemQueue();
         end
     end);

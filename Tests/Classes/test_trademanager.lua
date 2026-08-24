@@ -251,6 +251,53 @@ function testTradeShowAutoPlaces()
     ACP.Inventory.getCount = origGetCount;
 end
 
+function testTradeShowInboundTakesOver()
+    -- Arrange
+    reinitTM();
+    resetTM();
+    TM.trading = false;
+    _G.UnitName = function(unit)
+        if (unit == "party1") then return "Alice"; end
+        return "Player";
+    end;
+    ACP.Settings:set("items.healthstone.enabled", true);
+    ACP.Settings:set("items.healthstone.count", 1);
+    local origGetCount = ACP.Inventory.getCount;
+    ACP.Inventory.getCount = function(_, itemID)
+        if (itemID == 22105) then return 1; end
+        return 0;
+    end;
+    -- Pretend the controller is actively prepping a teammate trade.
+    ACP.DeliveryController.shouldTakeOverInboundTrade = function() return true; end;
+    local opened = false;
+    ACP.Events:register("t.opened", "ACP_TRADE_OPENED", function() opened = true; end);
+    -- Act
+    ACP.Events:fire("TRADE_SHOW");
+    -- Assert
+    lu.assertIsTrue(TM.trading);
+    lu.assertIsTrue(opened);
+    lu.assertIsTrue(H.hasTimer("TradeItemQueue"));
+    lu.assertEquals(#TM.ItemsToAdd, 1);
+    ACP.Events:unregister("t.opened");
+    ACP.Inventory.getCount = origGetCount;
+    _G.UnitName = function() return "Player" end;
+end
+
+function testTradeShowInboundNotTakenOver()
+    -- Arrange
+    reinitTM();
+    resetTM();
+    TM.trading = false;
+    _G.UnitName = function() return "Alice" end;
+    ACP.DeliveryController.shouldTakeOverInboundTrade = function() return false; end;
+    -- Act
+    ACP.Events:fire("TRADE_SHOW");
+    -- Assert
+    lu.assertIsFalse(TM.trading);
+    lu.assertIsFalse(H.hasTimer("TradeItemQueue"));
+    _G.UnitName = function() return "Player" end;
+end
+
 function testUiInfoMessageCompletes()
     -- Arrange
     reinitTM();

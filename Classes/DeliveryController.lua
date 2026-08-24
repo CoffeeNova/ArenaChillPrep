@@ -273,6 +273,61 @@ function DeliveryController:checkReady()
     end);
 end
 
+--- Whether an inbound (partner-initiated) trade window should be taken over
+--- and filled with prep items. True while the controller is actively prepping
+--- (ACTIVE) and the trade partner is a teammate — i.e. someone opened a trade
+--- with us during arena prep. In that case we deliver into the already-open
+--- window instead of starting our own trade.
+---@return boolean
+function DeliveryController:shouldTakeOverInboundTrade()
+    if (self.state ~= DS.ACTIVE) then
+        return false;
+    end
+
+    if (not ACP.Preconditions:enabled()) then
+        return false;
+    end
+
+    if (not ACP.Preconditions:inArena()) then
+        return false;
+    end
+
+    if (not ACP.Preconditions:notInCombat()) then
+        return false;
+    end
+
+    -- Only deliver to an actual teammate — never inject prep items into a
+    -- trade the player opened with a random person.
+    local partner = ACP.TradeManager:getPartner();
+
+    if (partner and not ACP.ArenaPrep:findPartyUnitByName(partner)) then
+        ACP:debugPrint("inbound trade with non-teammate %s, not taking over", tostring(partner));
+        return false;
+    end
+
+    return true;
+end
+
+--- ACP_TRADE_OPENED: the trade window is up. Cancel any pending scheduled
+--- attempt, credit the partner (for an inbound trade it isn't set yet), move
+--- to TRADING so we stop polling / starting a second trade, then fill the
+--- placement queue.
+---@param partner string
+function DeliveryController:onTradeOpened(partner)
+    ACP.Utils.Timers:cancel("TradeOpen");
+    ACP.Utils.Timers:cancel("TradeDelay");
+
+    if (not self.currentPartner) then
+        self.currentPartner = partner;
+    end
+
+    if (self.state == DS.ACTIVE) then
+        self:setState(DS.TRADING);
+    end
+
+    ACP.TradeManager:queueItems(ACP.TradePlanner:buildQueue());
+end
+
 --- Every-tick readiness poll while in ACTIVE. Safety net for events that may
 --- be missed on 2.5.5 (e.g. BAG_UPDATE on crafted healthstones). Uses a
 --- one-shot self-rescheduling ticker: while state stays ACTIVE it re-checks;
@@ -323,6 +378,11 @@ end
 function DeliveryController:onItemsChanged()
     if (self.state == DS.ACTIVE) then
         self:checkReady();
+    elseif (self.state == DS.TRADING and TradeFrame and TradeFrame:IsShown()) then
+        -- Items became ready mid-trade (e.g. crafted while the window was open,
+        -- including an inbound trade we took over): refresh the placement queue
+        -- so they get delivered into the already-open window too.
+        ACP.TradeManager:queueItems(ACP.TradePlanner:buildQueue());
     end
 end
 
@@ -440,12 +500,10 @@ function DeliveryController:_init()
         self:onTradeCompleted();
     end);
 
-    -- The trade window opened → cancel the one-shot open timeout and fill the
-    -- low-level placement queue (TradeManager is dependency-free — the
-    -- orchestrator builds the queue from Settings/Data/Inventory).
-    ACP.Events:register("DC.TRADE_OPENED", "ACP_TRADE_OPENED", function()
-        ACP.Utils.Timers:cancel("TradeOpen");
-        ACP.TradeManager:queueItems(ACP.TradePlanner:buildQueue());
+    -- The trade window opened → take over the window (credit the partner, stop
+    -- polling / scheduling) and fill the low-level placement queue.
+    ACP.Events:register("DC.TRADE_OPENED", "ACP_TRADE_OPENED", function(partner)
+        self:onTradeOpened(partner);
     end);
 
     ACP.Events:register("DC.TRADE_FAILED", "ACP_TRADE_FAILED", function(reason)
