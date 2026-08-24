@@ -295,12 +295,10 @@ function testEquipItemsCatalog()
     lu.assertEquals(W.equipItems[4].itemID, 22646);
 end
 
--- ---- WorkflowSpellbook scan (regression: the legacy scan passed the retail
--- bookType "player" to GetSpellBookItemInfo/Name instead of the TBC "spell", so
--- it found nothing on 20506; the Warlock static fallback was keyed on
--- entriesByID being empty AFTER the always-non-empty pets/stone-ranks merge, so
--- it never ran — the Buffs/Summons/Utility sections vanished from "+ Add step".
--- These tests pin both fixes.) ----
+-- ---- WorkflowSpellbook rebuild (the live spellbook scan was REMOVED
+-- 2026-08-24 — the probe-based scan never actually ran. The catalog is
+-- rebuilt from the static data: full catalog for a Warlock, empty for other
+-- classes.) ----
 
 local function spellbookGroup(category, name)
     for _, group in ipairs(ACP.WorkflowSpellbook.groupsByCategory[category] or {}) do
@@ -313,47 +311,20 @@ local function spellbookGroup(category, name)
 end
 
 local function clearSpellbookStubs()
-    _G.__stub.spellbookTabs = {};
-    _G.__stub.spellbookItems = {};
     _G.__stub.spellInfo = {};
     _G.UnitClass = function() return "Warlock", "WARLOCK" end;
 end
 
-function testScanGroupsLearnedBuffsAndSummons()
-    -- Arrange: a warlock with Fel Armor (buff) and Summon Imp (summon) learned
-    -- in the legacy spellbook (tab 1 = offset 0, two spells).
-    clearSpellbookStubs();
-    _G.__stub.spellbookTabs = { { name = "General", icon = 1, offset = 0, numSpells = 2, isGuild = false } };
-    _G.__stub.spellbookItems = {
-        [1] = { itemType = "SPELL", spellID = 28176, name = "Fel Armor", rankText = "", passive = false },
-        [2] = { itemType = "SPELL", spellID = 688, name = "Summon Imp", rankText = "", passive = false },
-    };
-    _G.__stub.spellInfo = { [28176] = "Fel Armor", [688] = "Summon Imp" };
-
-    -- Act
-    ACP.WorkflowSpellbook:scan();
-
-    -- Assert: learned spells land in their static categories via the legacy
-    -- "spell" bookType + name-based staticMetadata.
-    lu.assertNotIsNil(spellbookGroup("buffs", "Fel Armor"));
-    lu.assertNotIsNil(spellbookGroup("summons", "Summon Imp"));
-    lu.assertEquals(ACP.WorkflowSpellbook:getEntry(28176).category, "buffs");
-    lu.assertEquals(ACP.WorkflowSpellbook:getEntry(688).category, "summons");
-
-    -- Tear down
-    clearSpellbookStubs();
-end
-
-function testScanWarlockFallbackRestoresBuffsAndSummons()
-    -- Arrange: empty legacy spellbook (the live-client failure mode) on a
-    -- warlock.
+function testRebuildFillsStaticCatalogForWarlock()
+    -- Arrange: a warlock (the live-client scenario — the catalog comes from
+    -- the static data).
     clearSpellbookStubs();
 
     -- Act
     ACP.WorkflowSpellbook:scan();
 
-    -- Assert: the full static catalog fills every section the scan missed,
-    -- while the always-merged pets + stone ranks stay (the "current set").
+    -- Assert: the full static catalog fills every section, with the pets +
+    -- stone ranks merged first (the "current set").
     lu.assertNotIsNil(ACP.WorkflowSpellbook:getEntry(28176), "Fel Armor buff present");
     lu.assertNotIsNil(ACP.WorkflowSpellbook:getEntry(688), "Summon Imp present");
     lu.assertNotIsNil(spellbookGroup("buffs", "Fel Armor"));
@@ -362,11 +333,60 @@ function testScanWarlockFallbackRestoresBuffsAndSummons()
     lu.assertNotIsNil(ACP.WorkflowSpellbook:getEntry(27269), "Fire Shield pet present");
     lu.assertNotIsNil(ACP.WorkflowSpellbook:getEntry(27230), "Master Healthstone rank present");
     -- Shadow Ward (self-only buff) is part of the static catalog and appears in
-    -- the Buffs section even though a real scan would not find it.
+    -- the Buffs section.
     local sw = spellbookGroup("buffs", "Shadow Ward");
     lu.assertNotIsNil(sw, "Shadow Ward buff present");
     lu.assertEquals(ACP.WorkflowSpellbook:getEntry(28610).canTargetParty, false, "Shadow Ward is self-only");
 
     -- Tear down
     clearSpellbookStubs();
+end
+
+-- ---- SpellbookCatalogBuilder / WarlockCatalogExtender (refactor Phase 7) ----
+
+function testCatalogBuilderRankResultHealthstone()
+    -- A rank-suffixed Create Healthstone entry resolves its item via the
+    -- rank→item map (rank 5 → Major Healthstone 19012).
+    local spellbook = ACP.WorkflowSpellbook;
+    ACP.SpellbookCatalogBuilder:addEntry(spellbook, 999001, "Create Healthstone", "Rank 5");
+    local entry = ACP.SpellbookCatalogBuilder:getEntry(spellbook, 999001);
+    lu.assertEquals(entry.itemID, 19012);
+    lu.assertEquals(entry.category, "createItem");
+    ACP.SpellbookCatalogBuilder:reset(spellbook);
+end
+
+function testCatalogBuilderRankResultSoulstone()
+    local spellbook = ACP.WorkflowSpellbook;
+    ACP.SpellbookCatalogBuilder:addEntry(spellbook, 999002, "Create Soulstone", "Rank 5");
+    local entry = ACP.SpellbookCatalogBuilder:getEntry(spellbook, 999002);
+    lu.assertEquals(entry.itemID, 22103);
+    ACP.SpellbookCatalogBuilder:reset(spellbook);
+end
+
+function testCatalogBuilderDuplicateNameCategoryUpgrade()
+    -- A name added WITHOUT metadata (catalog unavailable) first lands in
+    -- "other"; a later add with the catalog present upgrades the group's
+    -- category to the metadata's.
+    local spellbook = ACP.WorkflowSpellbook;
+    ACP.SpellbookCatalogBuilder:reset(spellbook);
+    local spells = ACP.Data.Workflows.spells;
+    ACP.Data.Workflows.spells = nil;
+    ACP.SpellbookCatalogBuilder:addEntry(spellbook, 999007, "Fel Armor", "");
+    ACP.Data.Workflows.spells = spells;
+    ACP.SpellbookCatalogBuilder:addEntry(spellbook, 999008, "Fel Armor", "");
+    local group = ACP.SpellbookCatalogBuilder:getGroup(spellbook, "Fel Armor");
+    lu.assertEquals(group.category, "buffs");
+    ACP.SpellbookCatalogBuilder:reset(spellbook);
+end
+
+function testMergeStaticWarlockGatedForOtherClasses()
+    -- Both static extensions are no-ops for a non-Warlock.
+    local spellbook = ACP.WorkflowSpellbook;
+    ACP.SpellbookCatalogBuilder:reset(spellbook);
+    _G.UnitClass = function() return "Mage", "MAGE" end;
+    ACP.WarlockCatalogExtender:mergeStaticWarlock(spellbook);
+    ACP.WarlockCatalogExtender:addStaticFallback(spellbook);
+    lu.assertEquals(ACP.SpellbookCatalogBuilder:countEntries(spellbook), 0);
+    _G.UnitClass = function() return "Warlock", "WARLOCK" end;
+    ACP.SpellbookCatalogBuilder:reset(spellbook);
 end

@@ -24,12 +24,16 @@ graph TD
         I[Data/Items.lua]
         D[Data/DefaultSettings.lua]
         L[Data/Localization.lua]
+        WF[Data/Workflows.lua]
     end
 
     subgraph Core
         B[bootstrap.lua]
         E[Classes/Events.lua]
         S[Classes/Settings.lua]
+        SM[Classes/StateMachine.lua]
+        PR[Classes/Preconditions.lua]
+        SMIG[Classes/SettingsMigrator.lua]
     end
 
     subgraph Logic
@@ -37,11 +41,24 @@ graph TD
         INV[Classes/Inventory.lua]
         DC[Classes/DeliveryController.lua]
         TM[Classes/TradeManager.lua]
+        TP[Classes/TradePlanner.lua]
+        WREPO[Classes/WorkflowRepository.lua]
+        WKC[Classes/WorkflowKeybindController.lua]
+        WSB[Classes/WorkflowSpellbook.lua]
+        SCAT[Classes/SpellbookCatalogBuilder.lua]
+        SEXT[Classes/WarlockCatalogExtender.lua]
+        SLBL[Classes/SpellbookLabels.lua]
+        WE[Classes/WorkflowEngine.lua]
+        WB[Classes/WorkflowBindings.lua]
+        WCC[Classes/WorkflowCastController.lua]
+        PAC[Classes/PetAbilityCaster.lua]
+        WIS[Classes/WorkflowItemSteps.lua]
     end
 
     subgraph UI
         O[Classes/OptionsUI.lua]
         W[Classes/UI/Widgets.lua]
+        WUI[Classes/UI/WorkflowUI.lua]
     end
 
     B --> E
@@ -50,23 +67,46 @@ graph TD
     B --> INV
     B --> DC
     B --> TM
+    B --> WE
     B --> O
     O --> W
+    O --> WUI
 
     E --> AP
     E --> INV
     E --> DC
     E --> TM
+    E --> WE
 
     AP -- "buff gained / buff lost" --> DC
+    AP -- "buff lost" --> WE
     INV -- "items changed (itemID, count)" --> DC
-    DC -- "request trade (unit)" --> TM
+    DC -- "startTrade(unit) / queueItems(...)" --> TM
+    TP -- "buildQueue" --> DC
     TM -- "trade result (opened/closed/completed)" --> DC
+    WE -- "getDefinition/getCatalogEntry" --> WREPO
+    WE -- "step executors (engine state)" --> WCC
+    WE -- "step executors (engine state)" --> PAC
+    WE -- "step executors (engine state)" --> WIS
+    WE -- "buttons + key bindings" --> WB
+    WSB -- "rebuild orchestration" --> SCAT
+    WSB -- "rebuild orchestration" --> SEXT
+    WSB -- "labels" --> SLBL
+    S -- "migrations" --> SMIG
+    WUI -- "CRUD + step factory" --> WREPO
+    WUI -- "key I/O" --> WKC
 
+    DC --> PR
+    WE --> PR
+    DC --> SM
+    WE --> SM
     S --> DC
     S --> TM
     O --> S
     O --> DC
+    WUI --> WSB
+    WSB -- "ACP_SPELLBOOK_CHANGED" --> WUI
+    S -- "ACP_SETTINGS_RESET" --> O
 ```
 
 ### 2.1 `bootstrap.lua` — entry point
@@ -77,11 +117,15 @@ graph TD
   1. `ACP.Data.*` (already loaded via TOC)
   2. `ACP.Events:_init(frame)`
   3. `ACP.Settings:_init()` — reads `ArenaChillPrepDB`
-  4. `ACP.ArenaPrep:_init()`
-  5. `ACP.Inventory:_init()`
-  6. `ACP.TradeManager:_init()`
-  7. `ACP.DeliveryController:_init()`
-  8. `ACP.OptionsUI:_init()`
+  4. `ACP.WorkflowSpellbook:_init()` — runtime spellbook scan
+  5. `ACP.ArenaPrep:_init()`
+  6. `ACP.Inventory:_init()`
+  7. `ACP.TradeManager:_init()`
+  8. `ACP.WorkflowEngine:_init()` — secure cast buttons + bindings
+  9. `ACP.DeliveryController:_init()`
+  10. `ACP.WorkflowBindings:_init()`
+  11. `ACP.OptionsUI:_init()`
+- `WorkflowRepository`, `TradePlanner`, `StateMachine` and `Preconditions` are **init-free** (pure helpers/mixins — no event subscriptions, no state).
 - Right after initialization it runs an initial state check (`ArenaPrep:checkNow()`), to catch the case where the buff is already active when the addon loads (e.g., after `/reload` in an arena).
 
 ### 2.2 `Classes/Events.lua` — event bus
@@ -206,17 +250,20 @@ if ready and partner determined (not in givenTo) and not in combat
 - **Per-partner trade protection (`givenTo`):** runtime-only set (per prep, **not** saved to `ArenaChillPrepDB`) of partners who already received items, reset on `ACP_BUFF_LOST`. Partner detection skips `givenTo` members; after `ACP_TRADE_COMPLETED` the partner is added. When no eligible partner remains → `DONE`; otherwise the controller returns to `ACTIVE` to await the next crafted item. (2v2 = one partner → effectively one trade per prep.)
 - **Gate safety:** a trade is only initiated while `ArenaPrep:getRemainingTime() >= Settings:get("gateSafetySeconds")` (default 15); pending initiations/retries are cancelled once the remaining time drops below the threshold. An already-open trade window is left untouched.
 - **Reset:** `ACP_BUFF_LOST` or entering combat → `IDLE` (the combat flag clears on `PLAYER_REGEN_ENABLED`).
+- **Shared preconditions (refactor Phases 3-4, 2026-08-24):** `canStartTrade` delegates the shared gates (enabled / in-arena / not-in-combat / not-dead / gate safety) to `ACP.Preconditions`; the WHAT-to-pass grouping lives in `ACP.TradePlanner` — `DeliveryController:categoryReady`/`itemsReady` delegate to it, and on `ACP_TRADE_OPENED` the controller fills the TradeManager queue with `TradePlanner:buildQueue()`. State writes go through the `ACP.StateMachine` mixin (`setState` with enum validation — `Data.Constants.DELIVERY_STATE`).
 
 ### 2.6 `Classes/TradeManager.lua` — trade automation
 
 A low-level module. Knows only about one trade window. It is a dependency-free port of the patterns proven in Gargul's `Classes/TradeWindow.lua` (same client).
 
 ```lua
-ACP.TradeManager:startTrade(unit, callback) -- InitiateTrade; callback(success) after TRADE_SHOW or 1 s timeout
-ACP.TradeManager:queueItem(itemID)          -- FIFO queue of items to place
-ACP.TradeManager:cancel()                   -- cancel the current attempt
-ACP.TradeManager:isTrading() -> bool
+ACP.TradeManager:startTrade(unit)     -- InitiateTrade; outcome via ACP_TRADE_COMPLETED / ACP_TRADE_FAILED
+ACP.TradeManager:queueItems(itemIDs)  -- replace the FIFO queue (WHAT to pass is decided by TradePlanner)
+ACP.TradeManager:cancel()             -- cancel/reset the current attempt
+ACP.TradeManager:getPartner() -> string|nil  -- unit token of the trade in progress
 ```
+
+- **Restored low-level contract (refactor Phase 3, 2026-08-24):** the `queueConfiguredItems` decision logic (Settings/Data/Inventory reads) lived here against the "dependency-free" contract — it now lives in `Classes/TradePlanner.lua`. TradeManager only places whatever the orchestrator queues: on `TRADE_SHOW` it fires `ACP_TRADE_OPENED`, and the `DeliveryController` fills the queue via `TradePlanner:buildQueue()` before the FIFO ticker starts.
 
 WoW events: `TRADE_SHOW`, `TRADE_CLOSED`, `TRADE_ACCEPT_UPDATE`, `TRADE_TARGET_ITEM_CHANGED`, `ITEM_UNLOCKED`, `UI_INFO_MESSAGE`.
 
@@ -249,12 +296,13 @@ InitiateTrade(unit)
 - **Cursor hygiene:** always `ClearCursor()` on `TRADE_CLOSED` in case an item is still on the cursor.
 - **Timers:** use `ACP.Utils.Timers` (named wrappers over `C_Timer.After` / `C_Timer.NewTicker` — available on 20506), not Ace.
 
-### 2.7 `Classes/Settings.lua` and `Data/DefaultSettings.lua`
+### 2.7 `Classes/Settings.lua` (+ `Classes/SettingsMigrator.lua`) and `Data/DefaultSettings.lua`
 
 - `ArenaChillPrepDB` — SavedVariables (see `.ai/CONTEXT.md`).
 - `Settings:get(path)` / `Settings:set(path, value)` — access by dot path (`"items.soulstone.count"`).
-- `Settings:reset()` — restores a **deep copy** of `ACP.Data.DefaultSettings` (via `Utils/Tables:deepCopy`, so the live Data never shares nested tables with the defaults) and re-syncs the panel via `ACP.OptionsUI:refresh()` when present. Used by the "Reset to defaults" button in the General subcategory.
+- `Settings:reset()` — restores a **deep copy** of `ACP.Data.DefaultSettings` (via `Utils/Tables:deepCopy`, so the live Data never shares nested tables with the defaults) and re-syncs the panel via the `ACP_SETTINGS_RESET` event (OptionsUI subscribes; no reverse data → UI call — refactor Phase 2, 2026-08-24). Used by the "Reset to defaults" button in the General subcategory.
 - On load — deep merge of defaults and saved data (robust against new settings added in future versions). The **workflows branch merges per-slot REPLACE, not deepMerge**: a saved `definitions[N]` fully wins over the default one. (deepMerge would index-merge the steps ARRAYS and produce hybrids of old + new default steps.) `ensureDefaults` is array-aware for the same reason — missing step indices are never filled from defaults. Placeholder definitions from the previous defaults (exact name + steps match) are replaced by the new m6-macro defaults before the merge (`migratePlaceholderDefinitions`); user-edited definitions are never touched.
+- **Refactor Phase 7:** the whole migration/normalization pipeline lives in `Classes/SettingsMigrator.lua` (`migrateWorkflowNames`, `migrateStepSpellIDs`, `migratePlaceholderDefinitions`, `normalizeRankKeys`, `ensureDefaults`) — Settings keeps only the dot-path store, `persist` and the `_init` orchestration.
 
 ### 2.8 `Classes/OptionsUI.lua` (+ `Classes/UI/Widgets.lua`, `Classes/UI/WorkflowUI.lua`, `Classes/WorkflowSpellbook.lua`)
 
@@ -282,10 +330,9 @@ ACP.UI.ScrollFrame(parent, x, y, w, h)            -- returns sf with .ScrollChil
 - Client gotchas honored: `CreateFrame(..., "BackdropTemplate")` is mandatory before `SetBackdrop`; `OptionsSliderTemplate` does NOT create a global `"<name>Text"` (the label is built manually with `CreateFontString` above the slider); no Ace — all controls are Blizzard templates (`UICheckButtonTemplate`, `OptionsSliderTemplate`, `UIPanelButtonTemplate`, `UIDropDownMenuTemplate`, `InputBoxTemplate`, `UIPanelScrollFrameTemplate`).
 - `UI.Dropdown` requires a **unique global name** per instance: `UIDropDownMenuTemplate` names its children `<name>Text`/`<name>Button`/`<name>Left`/..., so anonymous frames would collide on those globals. Same for `UI.TextInput` (`InputBoxTemplate` → `<name>Left`/`<name>Middle`/`<name>Right`). `UI.ScrollFrame` auto-uniquifies its name (embedded `<name>ScrollBar`). Dropdown items are `{value, label, isTitle?}` arrays or builder functions re-evaluated on every menu open; selection is driven by `getter()` (value-based checkmark + collapsed label via `UIDropDownMenu_SetSelectedValue`), the setter writes the new value, and `.Refresh` re-runs the initializer.
 
-**`Classes/WorkflowSpellbook.lua`** — runtime player spellbook catalog (`ACP.WorkflowSpellbook`):
+**`Classes/WorkflowSpellbook.lua`** — runtime spell catalog for the Workflow editor (`ACP.WorkflowSpellbook`), a **facade** (refactor Phase 7) over `SpellbookCatalogBuilder` (catalog assembly, rank metadata, reads), `WarlockCatalogExtender` (class-gated static fallback + pet/stone extras) and `SpellbookLabels` (`stoneStepLabel`). The catalog is rebuilt from the STATIC data only (the live spellbook scan was removed — see ADR 17): a Warlock gets the full static catalog, other classes get an empty one:
 
-- Scans the player spellbook using the verified 20506 pattern (`GetSpellTabInfo` → `GetSpellBookItemInfo(slot, player)`), ignores passive/flyout entries, and groups learned spell ranks by localized spell name (entries sorted by rank ascending so the last entry is the highest learned rank). The API is probed at CALL time, not load time — the legacy globals are tried first with the string bank (`"player"`), and the backported `C_SpellBook` API second with the numeric enum bank. The tuple returned by the probes is preserved correctly (a prior collapse of the multiple return values made the scan always fail).
-- Known workflow metadata (summon/create-item/buff/target/reagent behavior) enriches scanned entries; unknown learned spells remain usable as generic `cast` steps instead of being excluded by a hardcoded catalog.
+- The catalog is assembled from the static data (`Data/Workflows.spells` + `stoneRanks`) with the Warlock gate; known workflow metadata (summon/create-item/buff/target/reagent behavior) enriches the entries, and the pet abilities + the full stone-rank list are merged in for a confirmed Warlock (a Mage or any other class gets an empty Add Step list — no hardcoded Warlock spells).
 - **Soul Link catalog fix (2026-08-22):** the catalog previously shipped `6307` as Soul Link — but 6307 is the Imp's **Blood Pact** passive (verified via WeakAurasTemplates TBC data). The correct Soul Link talent spell is **19028** (its applied aura is 25228, also named "Soul Link" — skip-if-buffed matches by NAME). The old entry made the UI show "Blood Pact" and the skip check matched the imp's always-on aura, so Soul Link was never cast. `Settings:migrateStepSpellIDs` rewrites saved cast steps `6307 → 19028` on load.
 - **createItem item-variant expansion (2026-08-22):** healthstone ranks 1-5 exist as historical item-ID pairs (`19012/19013` etc.); the client conjures ONE variant per rank (rank 5 → `19013`, live-verified — a cast stored as `11730/19012` still creates `19013`). `stoneRanks[spellID].itemIDs` lists both variants; the engine's expected-item set, goal-met skip and the unlearned-rank fallback all expand to the full variant set — a step completes only on its OWN rank (never another rank's stone), but on either variant of that rank.
 - **Pet-ability steps armed during a player cast:** a pet step that directly follows a cast-time step is armed (macro baked on the secure button) so its key can be pressed DURING the cast — but ONLY when the pet EXISTS (`UnitExists("pet")` gate, 2026-08-22: arming during a SUMMON made a mid-cast press execute the pet macro with no pet to route it to, interrupting the summon and popping "blocked action"; without the pet the buttons are made inert and the step runs standalone after the summon completes). Pet macros bake BOTH conditionals — `/cast [pet:<type>,@unit] <ability>`: `[@unit]` targets, `[pet:<type>]` makes the macro a no-op when that pet is not out. **Verification (2026-08-22):** the client silently swallows a pet ability pressed EARLY in the player's cast (Sacrifice at +2s of a 6s summon did nothing; +5s fired, live-verified). The engine must NOT mark the step done on the press itself — `isPetAbilityApplied(step)` verifies the effect (buff present on target by NAME, or the Voidwalker consumed during the cast); if unverified, `armPetVerify` polls every 0.1s and the step stays armed — the user's spam eventually lands the ability. `petStepDone` survives `advance()` (the cast-completion transition) so a confirmed armed press skips the pet step; `pause()`/`reset()`/cast-interrupt/`cancelTimers` all clear the poll.
@@ -293,16 +340,16 @@ ACP.UI.ScrollFrame(parent, x, y, w, h)            -- returns sf with .ScrollChil
 - **gateSafety only blocks cast-time steps (2026-08-22):** instant spells, pet abilities and equipItem steps are exempt — they complete in <1 GCD and cannot be caught mid-cast when the gates open. A gateSafety pause on an instant step created a resume→pause infinite loop in the arena's last seconds.
 - **One run per prep/test (2026-08-22):** after DONE the workflow key is a NO-OP in both modes — the engine never auto-restarts (the user's "second round" complaint). A fresh run starts on `ACP_BUFF_LOST` (new arena) or by re-issuing `/acp workflowtest N`, which calls `reset()` before `start()`. All workflow chat messages are debug-only (`ACP:debugPrint`); slash-command responses stay `ACP:print`.
 - **Step targeting (2026-08-22):** party-targeted steps cast DIRECTLY at the unit, never via the player's current target: player spells set the secure button's `unit` attribute (`requestKeyCast`, M6 ActionBook pattern), pet abilities bake `[@unit]` macro conditionals (`petMacroText` — the legacy `[target=unit]` form does not redirect pet casts on this client), and `checkGates` pauses with `reasonNoTarget` when a non-player target's `UnitExists` is false (solo test/raid group/member left — never silently buff the wrong unit). `clearKeyCast`/`equipItem`/`petAbility` reset `unit` to nil so a stale party unit cannot retarget a later step. The old `TargetUnit("party1")`/`TargetLastTarget()` swap is REMOVED — calling TargetUnit from insecure code popped "blocked action" on the first party-targeted cast, and the swap was redundant with the unit attribute. The engine never changes the player's current target.
-- Rescans on `PLAYER_LOGIN` (the initial ADDON_LOADED scan runs before the character is loaded) and on `SPELLS_CHANGED`; the scan is runtime-only and never persisted. Steps always store the highest learned rank's exact `spellID` — rank is not user-selectable (the per-step rank dropdown was removed 2026-08-20; it never worked). The Warlock static catalog is class-gated: the full fallback (`addStaticFallback`) only injects the catalog when the player is confirmed a Warlock, and `mergeStaticWarlock` additionally injects the pet abilities (Fire Shield / Sacrifice) and the full stone-rank list into a Warlock's catalog after every scan — so a Mage (or any other class) never sees Warlock spells in the Add Step list; the list is built from the active character's real spellbook plus the Warlock-specific extras.
+- Rebuilds on `PLAYER_LOGIN` (the initial ADDON_LOADED rebuild runs before the character class is known) and on `SPELLS_CHANGED`; the catalog is runtime-only and never persisted. After a rebuild the spellbook fires `ACP_SPELLBOOK_CHANGED` — the Workflows editor (when built) refreshes its Add Step list via that event (no reverse UI call — refactor Phase 2, 2026-08-24). Steps always store the highest learned rank's exact `spellID` — rank is not user-selectable (the per-step rank dropdown was removed 2026-08-20; it never worked). The stone rank→item maps (`HEALTHSTONE_RESULTS`/`SOULSTONE_RESULTS`) are derived from `Data/Items.lua` (single source — refactor Phase 1).
 
-**`Classes/UI/WorkflowUI.lua`** — the "Workflows" subcategory content (`ACP.WorkflowUI`), a module with dynamic `SelectedSlot`, `build(content, w, h)`, `refresh()`, `setEnabled(flag)`, `addWorkflow/addStep/removeStep/moveStep`, direct selected-slot keybind editing, and a status line:
+**`Classes/UI/WorkflowUI.lua`** — the "Workflows" subcategory content (`ACP.WorkflowUI`), **pure layout/render** (refactor Phase 6): data CRUD + the step factory live in `ACP.WorkflowRepository` (`addWorkflow`/`deleteWorkflow`/`addStep`/`removeStep`/`moveStep`/`buildStep`/`findSpell`), key-binding I/O lives in `ACP.WorkflowKeybindController` (`getSlotKey`/`setSlotKey`/`shiftBindingsAfterDelete`), and control getter/setter pairs come from a `bindPath(path)` helper. A module with dynamic `SelectedSlot`, `build(content, w, h)`, `refresh()`, `setEnabled(flag)`, and a status line:
 
 - Layout (top→bottom, built with a **vertical cursor** — every section builder returns its own height, so the tab adapts to the actual panel size, no magic offsets):
   1. **status line** — engine state + `Slot N: on/off` + step count; the bound key is NOT repeated here (the editable Key control below is the single authoritative presentation). When the global engine is OFF it explains why and shows an "Enable workflow engine" CTA button instead of graying out.
    2. **Workflow defaults** — section header + `skipIfBuffedDefault` checkbox + a short description; kept separate from the per-workflow identity/binding form. The setting is the default for the **per-step skip flag** applied to newly added `cast` (buff) / `summon` / `createItem` steps (see §"Skip already-completed steps" below).
   3. **Workflow editor** — section header + three aligned rows: `Workflow:` dropdown + `+ Add workflow` (labeled, not a bare `+`) / `Name:` input + `Enabled` checkbox / `Key:` keybind capture + `Clear` button (disabled while unbound). The key appears in exactly this one editable place.
   4. **Steps** — `Steps` header with `+ Add step` dropdown at the right; a subdued table header row (`# / Spell / Target / Skip if buffed / Actions`); a boxed scrollable list that **fills all remaining panel height** (`updateStepScroll()` recomputes `listH` from the stored content height + `stepListY` on every refresh).
-- Step row (48 px tall, two lines): line 1 = spell name, line 2 = `SpellID: <id>` in dim text (pet-ability steps show the pet hint `pet ability` instead); Target and Skip columns are fixed width and left/right aligned for every row; when a parameter does not apply the row renders an explicit disabled `Not available` value with an explanatory tooltip instead of `Self`/`—` (no pseudo-editable control). Actions are right-aligned `↑`/`↓`/`Delete` buttons with tooltips, Up/Down disabled at the list ends, Delete turns red on hover. Subtle alternating row strip. Rows are rebuilt on every change; retired rows are hidden and moved to a hidden recycle parent (never `SetParent(nil)`, which promotes them to visible top-level frames on 2.5.5); more rows than the box fits → the scrollbar appears; after adding a step the list scrolls to the bottom. Stone-creating steps show the rank-specific stone name in line 1 — `stepSpellLabel()` falls back to `WorkflowSpellbook:stoneStepLabel()`, e.g. `Create Master Healthstone`, because `GetSpellInfo` returns the plain `Create Healthstone` for every rank — so only the spellID would otherwise disambiguate.
+- Step row (48 px tall, two lines): line 1 = spell name, line 2 = `SpellID: <id>` in dim text (pet-ability steps show the pet hint `pet ability` instead); Target and Skip columns are fixed width and left/right aligned for every row; when a parameter does not apply the row renders an explicit disabled `Not available` value with an explanatory tooltip instead of `Self`/`—` (no pseudo-editable control). Actions are right-aligned `↑`/`↓`/`Delete` buttons with tooltips, Up/Down disabled at the list ends, Delete turns red on hover. Subtle alternating row strip. Rows are rebuilt on every change; retired rows are hidden and moved to a hidden recycle parent (never `SetParent(nil)`, which promotes them to visible top-level frames on 2.5.5); more rows than the box fits → the scrollbar appears; the scroll position is preserved across refreshes (captured before the rebuild, restored + clamped after — W17 fix); after adding a step the list scrolls to the bottom. Stone-creating steps show the rank-specific stone name in line 1 — `stepSpellLabel()` falls back to `WorkflowSpellbook:stoneStepLabel()`, e.g. `Create Master Healthstone`, because `GetSpellInfo` returns the plain `Create Healthstone` for every rank — so only the spellID would otherwise disambiguate.
 - `equipItem` rows (2026-08-20): line 1 = the ITEM name (`GetItemInfo`/`itemName` fallback), line 2 = `ItemID: <id>`; rank/target/skip all render `Not available` — an equip step has no spell, rank or target. No rank dropdown.
    - Add Step menu (2026-08-20): one plain spell-name entry per learned spell (`group.name` only — no rank/SpellID decoration) grouped by category, plus a **Pet abilities** category (Warlock-only — Fire Shield and Sacrifice) whose entries add `pet` steps, plus an **Equip items** category (from `ACP.Data.Workflows.equipItems` — the spellstone family; Warlock-only) whose entries add `equipItem` steps (`"item:<id>"` value convention). Stone-creating spells (Create Healthstone / Create Spellstone) are listed per rank with the stone's name (`Create Master Healthstone`, `Create Major Healthstone`, …) so the player can pick a specific rank. The whole list is built from `WorkflowSpellbook`'s scan of the ACTIVE character's spellbook plus the Warlock-only extras — it is never hardcoded to a class. The Imp's Fire Shield (TBC spell 27269, NOT 19483 which resolves to "Immolation" on 2.5.5) is party-castable and gets a Target dropdown like a `cast` buff.
     - Add-step defaults: highest learned rank for the selected spell name (rank is fixed to the max — the old per-row rank dropdown was removed), `target = "player"` (also for party-castable pet steps), `skipIfBuffed = workflows.skipIfBuffedDefault` for `cast` (buff) / `summon` / `createItem` steps (the flag means "skip when the step's goal is already met"), `itemID` copied from metadata when available. A selected per-rank entry stores that rank's exact `spellID` + `itemID` (e.g. Create Major Healthstone → 11730/19012). Every edit writes through `Settings:set` and persists to the active character profile.
@@ -341,6 +388,39 @@ ACP.Data.Items = {
 ```
 
 The `classItems` mapping is what flexibility is built on: the addon knows what the current class can pass and shows only relevant settings.
+
+### 2.10 `Classes/WorkflowEngine.lua` (+ extracted step modules) — workflow engine
+
+The one-button warlock prep pipeline: buff / summon / conjure / pet ability / equip steps driven by ONE key press per step. All casting is insecure on 20506 (blocked for cast-time AND instant spells outside safe zones), so every step goes through hidden `SecureActionButtonTemplate` buttons and a real hardware key press — the engine never calls `CastSpellByID/ByName`.
+
+**State machine** (`WORKFLOW_STATE` enum, validated via the `StateMachine` mixin):
+
+```mermaid
+stateDiagram-v2
+    [*] --> IDLE
+    IDLE --> RUNNING: start(slot) (key press / PreClick; arena gate + enabled gate)
+    RUNNING --> RUNNING: step completes → advance() (event/GCD/poll driven)
+    RUNNING --> PAUSED: gate fails / combat / interrupt / no key bound
+    PAUSED --> RUNNING: key press (same slot resumes from the same step)
+    RUNNING --> DONE: stepIndex past the last step
+    DONE --> [*]: one run per prep — ACP_BUFF_LOST resets to IDLE
+    RUNNING --> IDLE: ACP_BUFF_LOST / reset() (different slot started)
+```
+
+**Step execution is event-driven, never sleep-based:**
+- **cast-time** (summon/createItem): `requestKeyCast` points the secure button at the resolved spellID (`resolveCastInfo` — a stored unlearned rank upgrades to the highest KNOWN rank of the family) → SENT/START (spell-ID guarded — a manual cast with a different spellID is ignored) → `waitingForCast` + 10 s timeout → STOP/SUCCEEDED (signal-only, verified `UnitCastingInfo == nil`) → advance.
+- **instant** (buffs): `waitForInstantEffect` — the buff landing (aura by NAME), a registered GCD, or SENT if the client fires it (verified: SENT may NOT fire for instant spells).
+- **createItem**: cast + delta-based completion (a NEW stone of the expected rank's variant set appears in bags — `ACP_ITEMS_CHANGED` fast path + 0.25 s poll for untracked items).
+- **equipItem**: the same secure button re-pointed to `type="item"`; completion is poll-driven (the item leaves the bags), user-paced.
+- **pet ability**: `/cast [pet:<type>,@unit] <ability>` macro — `[@unit]` is the 20506-reliable target form, `[pet:<type>]` makes the press a no-op when that pet is not out (so Sacrifice can be pressed DURING the Summon Felhunter cast). A pet step following a cast-time step is armed during that cast (gated on the pet existing); the press itself is NOT completion — `isPetAbilityApplied` verifies the effect (buff by name / Voidwalker consumed) with a 0.1 s poll, and the user keeps pressing until it lands.
+
+**Per-step dispatch** (`STEP_DISPATCH`, W9): one lookup per step type — `{ run, goalMet?, skippable?, needsKnownSpell?, petDoneAware?, petExempt? }`. **Gates** (`checkGates`, shared preconditions via `ACP.Preconditions`): engine enabled / arena buff (debugBypass for `/acp workflowtest`) / not in lockdown / not dead / target unit exists / not already casting / not moving (pet steps exempt) / soul shard present / gate safety (cast-time steps only — instant steps cannot be caught mid-cast).
+
+**Skip-if-buffed** (`effectiveSkip` × `isStepGoalMet`): checked BEFORE the gates — a met goal skips the step even without reagents (buff present / pet already out / stone in bags).
+
+**Sub-systems (refactor Phase 5, see ADR 14):** `WorkflowCastController` (player-cast steps + UNIT_SPELLCAST_* events), `PetAbilityCaster` (pet steps + PostClick), `WorkflowItemSteps` (createItem/equipItem + item waits), `WorkflowBindings` (secure buttons + key binding management: per-slot priority overrides on BOTH keys — ADR 18 — so either bound key starts AND casts; PreClick starts/resumes, the SAME press's click casts). The engine exposes thin delegates; the extracted modules operate on the engine's state table.
+
+**Integration with the autotrade (Phase 11):** the engine and `DeliveryController` are independent event-driven pipelines — a workflow `createItem` step puts a stone in the bags → `BAG_UPDATE` → `ACP_ITEMS_CHANGED` → the controller trades it (if ACTIVE). No shared mutable state, no double-trade; a trade window opening mid-workflow cannot corrupt the engine (a blocked key press simply waits — the engine is user-paced).
 
 ---
 
@@ -405,6 +485,22 @@ sequenceDiagram
 | Prep time runs out (`remaining <= gateSafetySeconds`) | No new trades initiated; pending initiations/retries cancelled; an open window is left untouched |
 | Remaining time unavailable (`duration`/`expirationTime` missing) | `getRemainingTime()` returns `nil` → gate not enforced (trade allowed), log a debug note |
 | `GetSpellInfo(32727)` returned nil (no data) | Fallback to spellID iteration via `UnitBuff` |
+| Workflow key pressed outside an arena | `start()` guard → IDLE, log "not in arena prep" (`/acp workflowtest` bypasses) |
+| Workflow key pressed in combat | `InCombatLockdown` guard → no-op; combat start pauses a running workflow |
+| Player moves during a cast-time step | `UNIT_SPELLCAST_INTERRUPTED` → the SAME step re-arms (`waitingForKey`) — the next press re-casts it; combat still hard-pauses |
+| Player moves before an instant cast | `IsPlayerMoving` gate → PAUSED (pause-on-move is unconditional) |
+| No Soul Shard for summon/createItem | Shard gate → PAUSED `noShard`; resume after acquiring one |
+| Step spell unknown | `knowsSpell` false → step SKIPPED (log), continue |
+| Step goal already met + skip flag | `isStepGoalMet` → skip BEFORE the reagent/combat gates |
+| Cast fails (range/LOS) | `UNIT_SPELLCAST_FAILED` → PAUSED `castFailed` |
+| Pet ability pressed early in a cast | silently swallowed by the client → NOT marked done; `armPetVerify` poll keeps the step armed until the effect lands |
+| Last step reached | DONE; the key is a no-op until the next arena (`ACP_BUFF_LOST` → IDLE) |
+| `/reload` mid-workflow | engine re-inits IDLE (in-memory state); press the key to restart from step 1 |
+| Workflow 2 started while workflow 1 paused | `reset()` then fresh start from step 1 |
+| Autotrade opens a trade window mid-workflow | independent pipelines — no conflict; a blocked press waits (user-paced) |
+| createItem cast done, item not in bags yet | `ACP_ITEMS_CHANGED` + 0.25 s poll, 10 s safety timeout |
+| Gate safety (< gateSafetySeconds) | cast-time steps PAUSED `gateSafety`; instant/pet/equip steps proceed (cannot be caught mid-cast) |
+| Empty workflow | no steps → immediately DONE |
 
 ---
 
@@ -417,12 +513,23 @@ sequenceDiagram
 5. **Settings use dot paths.** `Settings:get("items.soulstone.count")` — easy to extend and validate.
 6. **Port Gargul's trade patterns, not its code.** Gargul (`Classes/TradeWindow.lua`, same client) has proven trade mechanics: `UseContainerItem` placement into the open trade window, FIFO queue + one-item-per-tick, `ITEM_UNLOCKED` re-add, `open()` with callback + 1 s timeout, completion via `ERR_TRADE_COMPLETE`. ArenaChillPrep reimplements these dependency-free (timers via `C_Timer`, not Ace). This is the single most valuable piece of prior art for this addon.
 7. **Timers are named and centralized.** `ACP.Utils.Timers:after/interval/cancel` mirrors Gargul's `GL:after/GL:interval` API so call sites read identically, but the implementation is a thin wrapper over `C_Timer`.
+8. **Shared `Preconditions` (refactor Phase 4, 2026-08-24).** The two orchestrators duplicated the same gates with DIVERGENT combat APIs. `Classes/Preconditions.lua` is the single canonical source: `enabled()`, `inArena()`, `buffActive()`, `notInCombat()` (trading — `UnitAffectingCombat`), `notInLockdown()` (casting — `InCombatLockdown`), `notDead()`, `gateSafetyOk()`. **Combat-API decision (plan open question 4):** the two APIs test DIFFERENT things — combat state vs secure-frame protection — so BOTH are kept, each under the predicate of its consumer. This is the behavior-preserving choice.
+9. **`StateMachine` mixin (refactor Phase 4).** `Classes/StateMachine.lua` provides `initOnce(embedder)` (the `_initialized` guard) and `setState(embedder, newState, allowed)` (change-suppression log + enum validation against `Data.Constants.WORKFLOW_STATE` / `DELIVERY_STATE` — an invalid state throws instead of silently corrupting the state machine). Both orchestrators embed it via one-line wrappers.
+10. **`WorkflowRepository` paths (refactor Phase 2).** The `"workflows.definitions.<slot>..."` dot-path vocabulary was re-typed at 12+ sites. `Classes/WorkflowRepository.lua` owns `definitionPath(slot)` / `stepsPath(slot)` / `stepPath(slot, i)`; WorkflowUI and WorkflowEngine consume them. Phase 6 grows this into the full CRUD module.
+11. **`TradePlanner` extraction (refactor Phase 3).** The WHAT-to-pass decision (Settings/Data/Inventory reads) moved out of TradeManager into `Classes/TradePlanner.lua` (`buildQueue`, `categoryReady`, `getCategories`, `selectedRanksByGroup`), restoring TradeManager's low-level dependency-free contract. DeliveryController delegates its grouping to it — one source for rank grouping.
+12. **State enums centralized (refactor Phase 2).** `Data.Constants` gains `WORKFLOW_STATE` / `DELIVERY_STATE` (raw string comparisons replaced) and `GATE_SAFETY_DEFAULT` (the `or 15` fallback); WorkflowEngine pause reasons live in `Data.Constants.WORKFLOW_REASON` (moved from a module-local table in Phase 5 — the extracted step modules share them) keyed to `L.workflow.reason*`.
+13. **Step-type handler table (refactor Phase 5, 2026-08-24).** The stringly-typed `step.type` dispatch (5+ if/elseif sites) collapsed into `WorkflowEngine`'s `STEP_DISPATCH` lookup: per type `{ run, goalMet?, skippable?, needsKnownSpell?, petDoneAware?, petExempt? }`. The old if/elseif chain is preserved in git history (HEAD 9f0cb9e). The dispatch entries call the extracted step modules — the behavior of all 5 step types (cast/summon/createItem/equipItem/pet) must be live-verified.
+14. **WorkflowEngine god-object split (refactor Phase 5).** The engine keeps the state, gates, catalog/aura helpers and the lifecycle; the step executors moved out as stateless modules that operate ON the engine: `WorkflowCastController` (player-cast steps + UNIT_SPELLCAST_* events), `PetAbilityCaster` (pet steps + PostClick), `WorkflowItemSteps` (createItem/equipItem + item waits), and `WorkflowBindings` absorbed the secure-button creation + key-binding management (it was a thin globals file). The engine exposes thin delegating methods so its public surface (WorkflowUI/OptionsUI/tests) is unchanged. `WORKFLOW_REASON` moved to `Data.Constants` (shared by the step modules).
+15. **WorkflowUI fat-view split (refactor Phase 6).** WorkflowUI is now pure layout/render. `WorkflowRepository` owns the CRUD + the step factory (stepType/target/skip default inference — the UI no longer re-derives business rules); `WorkflowKeybindController` owns SetBinding/SaveBindings/conflict-steal + the delete-shift. A `bindPath(path)` helper collapses the repeated getter/setter closures; `renderSteps` preserves the scroll position (W17); the Widgets Keybind fallback strings are caller-passed `L.*` values.
+16. **WorkflowSpellbook & Settings split (refactor Phase 7).** `WorkflowSpellbook` is a facade over `SpellbookCatalogBuilder` (assembly + rank metadata + reads), `WarlockCatalogExtender` (class-gated static fallback + pet/stone extras) and `SpellbookLabels` (`stoneStepLabel`; the dead `stoneName` was removed). `Settings` keeps the dot-path store + init orchestration; the migration pipeline (`migrateWorkflowNames`/`migrateStepSpellIDs`/`migratePlaceholderDefinitions`/`normalizeRankKeys`/`ensureDefaults`) moved to `SettingsMigrator`.
+17. **Live spellbook scan removed (2026-08-24, user decision).** The probe-based scan never actually ran (`return X and pcall(...)` truncates pcall's second value, so the tab count was always nil and the scan loop was dead code), and the earlier working-scan variant was rejected (2026-08-21) for exposing every learned spell in "+ Add step". The runtime catalog is now rebuilt from the STATIC data only — a Warlock gets the full class-gated static catalog, other classes get an empty catalog. `Classes/SpellbookScanner.lua` is deleted.
+18. **Slot keys = two keys (fixed 2026-08-24).** A command can be bound to two keys in the Key Bindings UI. `WorkflowBindings:applySlotBindings` puts the priority override on BOTH keys (the second otherwise only fired the start action and could never cast an armed step), and `WorkflowKeybindController:setSlotKey` clears BOTH on rebind. Root-cause pattern: `GetBindingKey and GetBindingKey(command)` drops the second return value (`and` truncates to one).
 
 ---
 
 ## 5b. Unit tests (see `Tests/`)
 
-The addon is unit-tested **outside the game** under LuaJIT (Lua 5.1). Coverage target: **≥ 90%** of all non-UI modules (currently 96%+). `OptionsUI.lua` is excluded (UI code).
+The addon is unit-tested **outside the game** under LuaJIT (Lua 5.1). Coverage target: **≥ 90%** of all non-UI modules (currently 91.9%, 277 tests — incl. WorkflowEngine and the refactor modules). `OptionsUI.lua` is excluded (UI code).
 
 - **Runner:** `Tests/run_tests.lua` (luacov + luaunit + WoW stubs + loader); PowerShell wrapper `Tests/run-tests.ps1`. Exit `0` = pass + coverage ≥ 90%.
 - **Stubs:** `Tests/stubs/wow_stubs.lua` — mutable WoW state in `_G.__stub`; file-scope captures read it, call-time reads are overridable.

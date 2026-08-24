@@ -48,14 +48,11 @@ function H.hasTimer(name)
 end
 
 --- Recursive copy (deepMerge shares nested tables — unusable for snapshots).
+--- Reuses the production Utils/Tables:deepCopy (same semantics).
 ---@param t table
 ---@return table
 function H.deepCopy(t)
-    local copy = {};
-    for k, v in pairs(t) do
-        copy[k] = (type(v) == "table") and H.deepCopy(v) or v;
-    end
-    return copy;
+    return _G.ACP.Utils.Tables:deepCopy(t);
 end
 
 --- Re-load an addon module file through the vararg chain (used to re-capture

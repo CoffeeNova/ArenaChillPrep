@@ -18,7 +18,12 @@ covRunner.init({
     include = {"bootstrap$", "Data/Constants$", "Data/Items$", "Data/DefaultSettings$", "Data/Localization$",
                "Data/Workflows$", "Utils/Tables$", "Utils/Items$", "Utils/Timers$", "Classes/Events$",
                "Classes/Settings$", "Classes/ArenaPrep$", "Classes/Inventory$", "Classes/DeliveryController$",
-               "Classes/TradeManager$", "Classes/WorkflowSpellbook$"}
+               "Classes/TradeManager$", "Classes/WorkflowSpellbook$", "Classes/WorkflowEngine$",
+               "Classes/WorkflowRepository$", "Classes/TradePlanner$", "Classes/StateMachine$",
+               "Classes/Preconditions$", "Classes/WorkflowCastController$", "Classes/PetAbilityCaster$",
+               "Classes/WorkflowItemSteps$", "Classes/WorkflowKeybindController$",
+               "Classes/SettingsMigrator$", "Classes/SpellbookCatalogBuilder$",
+               "Classes/WarlockCatalogExtender$", "Classes/SpellbookLabels$"}
 });
 
 -- ---- luaunit (exposed as global `lu` for the suites) ----
@@ -53,7 +58,8 @@ local suites = {"test_bootstrap", "Data/test_constants", "Data/test_items", "Dat
                 "Data/test_localization", "Data/test_workflows", "Utils/test_tables", "Utils/test_utils_items",
                 "Utils/test_timers", "Classes/test_events", "Classes/test_settings", "Classes/test_arenaprep",
                  "Classes/test_inventory", "Classes/test_deliverycontroller", "Classes/test_trademanager",
-                 "Classes/test_workflowengine"};
+                 "Classes/test_workflowengine", "Classes/test_workflowrepository",
+                 "Classes/test_workflowkeybindcontroller"};
 for _, suite in ipairs(suites) do
     dofile(ROOT .. "/" .. suite .. ".lua");
 end

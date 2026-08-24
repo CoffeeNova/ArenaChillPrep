@@ -1272,8 +1272,6 @@ function testPreClickStartsSlotAndArmsFirstStep()
     local savedKnown = _G.__stub.knownSpells;
     local savedCountdown = ACP.ArenaPrep.countdownEndTime;
     ACP.ArenaPrep.countdownEndTime = nil;
-    local savedBuffExp = ACP.ArenaPrep.buffExpirationTime;
-    ACP.ArenaPrep.buffExpirationTime = nil;
     Engine:_init();
     applyFreshSlotBindings(key);
     Engine.debugBypass = true;
@@ -1300,11 +1298,46 @@ function testPreClickStartsSlotAndArmsFirstStep()
     -- Cleanup
     ACP.Settings.WorkflowData.definitions[1] = savedDef;
     ACP.ArenaPrep.countdownEndTime = savedCountdown;
-    ACP.ArenaPrep.buffExpirationTime = savedBuffExp;
     _G.__stub.knownSpells = savedKnown;
     Engine.slotKeys = {};
     Engine:reset();
     Engine.debugBypass = false;
     _G.__stub.bindingKeys = nil;
     _G.__stub.bindingActions = nil;
+end
+
+-- Regression (2026-08-24 fix): a workflow slot can be bound to TWO keys in
+-- the Key Bindings UI. applySlotBindings must put the priority override on
+-- BOTH — otherwise the second key only fires the ACP_WORKFLOW<i> start
+-- action (a no-op while running) and can never cast an armed step.
+function testApplySlotBindingsOverridesSecondaryKey()
+    -- Arrange: slot 1 bound to F9 (primary) + CTRL-F9 (secondary).
+    _G.__stub.bindingKeys = { ["ACP_WORKFLOW1"] = "F9" };
+    _G.__stub.bindingActions = { ["F9"] = "ACP_WORKFLOW1", ["CTRL-F9"] = "ACP_WORKFLOW1" };
+    _G.__stub.overrideClicks = {};
+    local origGetBindingKey = _G.GetBindingKey;
+    _G.GetBindingKey = function(command)
+        if (command == "ACP_WORKFLOW1") then return "F9", "CTRL-F9"; end
+        return nil;
+    end;
+
+    Engine:_init();
+    Engine.slotKeys = {};
+    -- Act
+    Engine:applySlotBindings();
+    -- Restore before asserting (no stub leakage on failure).
+    _G.GetBindingKey = origGetBindingKey;
+
+    -- Assert: BOTH keys are overridden to the slot's secure button; the
+    -- primary key is remembered for the press prompts.
+    local buttonName = ACP.Data.Constants.WORKFLOW_BUTTON_NAME .. "1";
+    lu.assertEquals(_G.__stub.overrideClicks["F9"], buttonName);
+    lu.assertEquals(_G.__stub.overrideClicks["CTRL-F9"], buttonName);
+    lu.assertEquals(Engine.slotKeys[1], "F9");
+
+    -- Cleanup
+    Engine.slotKeys = {};
+    _G.__stub.bindingKeys = nil;
+    _G.__stub.bindingActions = nil;
+    _G.__stub.overrideClicks = nil;
 end

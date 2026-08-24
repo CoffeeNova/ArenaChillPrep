@@ -1,6 +1,7 @@
 -- ArenaChillPrep — Tests/Classes/test_trademanager.lua
 -- Covers Classes/TradeManager.lua: startTrade, cancel, getItemGUID,
--- processItemQueue, queueConfiguredItems.
+-- processItemQueue, queueItems (the queue itself is built by
+-- Classes/TradePlanner.lua).
 
 local ACP = _G.ACP;
 local TM = ACP.TradeManager;
@@ -27,8 +28,6 @@ function testStartTrade()
     -- Arrange
     resetTM();
     TM.startTrade = RealStartTrade;
-    local fired = false;
-    ACP.Events:register("t.start", "ACP_TRADE_START", function() fired = true; end);
     local initiated = false;
     _G.InitiateTrade = function() initiated = true; end;
     -- Act
@@ -36,9 +35,7 @@ function testStartTrade()
     -- Assert
     lu.assertIsTrue(TM.trading);
     lu.assertEquals(TM.partnerUnit, "party1");
-    lu.assertIsTrue(fired);
     lu.assertIsTrue(initiated);
-    ACP.Events:unregister("t.start");
 end
 
 function testStartTradeWhileTradingNoop()
@@ -98,17 +95,6 @@ function testGetItemGUIDMissingArgs()
     local guid = TM:getItemGUID(nil, 1);
     -- Assert
     lu.assertIsNil(guid);
-end
-
-function testGetItemGUIDNoApi()
-    -- Arrange
-    local orig = _G.C_Item;
-    _G.C_Item = nil;
-    -- Act
-    local guid = TM:getItemGUID(0, 1);
-    -- Assert
-    lu.assertIsNil(guid);
-    _G.C_Item = orig;
 end
 
 function testProcessItemQueue()
@@ -171,7 +157,7 @@ function testProcessItemQueueEmpty()
     lu.assertEquals(#TM.ItemsToAdd, 0);
 end
 
-function testQueueConfiguredItems()
+function testQueueItemsFromPlanner()
     -- Arrange
     resetTM();
     ACP.Settings:set("items.healthstone.enabled", true);
@@ -183,24 +169,24 @@ function testQueueConfiguredItems()
         return 0;
     end;
     -- Act
-    TM:queueConfiguredItems();
+    TM:queueItems(ACP.TradePlanner:buildQueue());
     -- Assert
     lu.assertEquals(#TM.ItemsToAdd, 2);
     ACP.Inventory.getCount = origGetCount;
 end
 
-function testQueueConfiguredItemsDisabled()
+function testQueueItemsFromPlannerDisabled()
     -- Arrange
     resetTM();
     ACP.Settings:set("items.healthstone.enabled", false);
     -- Act
-    TM:queueConfiguredItems();
+    TM:queueItems(ACP.TradePlanner:buildQueue());
     -- Assert
     lu.assertEquals(#TM.ItemsToAdd, 0);
     ACP.Settings:set("items.healthstone.enabled", true);
 end
 
-function testQueueConfiguredItemsCount()
+function testQueueItemsFromPlannerCount()
     -- Arrange
     resetTM();
     ACP.Settings:set("items.healthstone.enabled", true);
@@ -211,7 +197,7 @@ function testQueueConfiguredItemsCount()
         return 0;
     end;
     -- Act
-    TM:queueConfiguredItems();
+    TM:queueItems(ACP.TradePlanner:buildQueue());
     -- Assert
     lu.assertEquals(#TM.ItemsToAdd, 2);
     ACP.Settings:set("items.healthstone.count", 1);

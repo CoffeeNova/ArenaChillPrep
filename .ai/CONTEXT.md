@@ -63,7 +63,7 @@ ArenaChillPrep/
 │   └── ARCHITECTURE.md       # Architecture: modules, data flow, state machine
 ├── Data/                     # Static data
 │   ├── Constants.lua         # Buff ID, constants, timings, bracket size map
-│   ├── Items.lua             # Item catalog + class → items mapping
+│   ├── Items.lua             # Item catalog (healthstones + soulstones) + class → items mapping
 │   ├── DefaultSettings.lua   # SavedVariables defaults
 │   └── Localization.lua      # Strings (enUS / ruRU)
 ├── Classes/                  # Service modules
@@ -71,14 +71,28 @@ ArenaChillPrep/
 │   ├── ArenaPrep.lua         # Prep buff detection, bracket detection, remaining time
 │   ├── Inventory.lua         # Bag scan, counters, BAG_UPDATE subscription
 │   ├── DeliveryController.lua# Orchestrator: prep → wait for items → trade
-│   ├── TradeManager.lua      # Trade window automation
-│   ├── Settings.lua          # SavedVariables wrapper
-│   ├── WorkflowSpellbook.lua # Per-character spellbook scan + rank groups
+│   ├── TradeManager.lua      # Low-level trade window automation (dependency-free)
+│   ├── TradePlanner.lua      # WHAT to pass: queue building + rank grouping (Settings/Data/Inventory)
+│   ├── Settings.lua          # SavedVariables wrapper (dot-path store)
+│   ├── SettingsMigrator.lua  # Migration/normalization pipeline (names/IDs/placeholders/rank keys)
+│   ├── WorkflowRepository.lua# Workflow CRUD + step factory + settings paths
+│   ├── WorkflowKeybindController.lua # Slot key I/O: SetBinding/SaveBindings/conflict-steal/delete-shift
+│   ├── WorkflowSpellbook.lua # FACADE: static-catalog rebuild + delegates
+│   ├── SpellbookCatalogBuilder.lua # Catalog assembly + rank metadata + reads
+│   ├── WarlockCatalogExtender.lua  # Class-gated static fallback + pet/stone extras
+│   ├── SpellbookLabels.lua   # stoneStepLabel
+│   ├── WorkflowEngine.lua    # Core state machine + STEP_DISPATCH handler table + delegates
+│   ├── WorkflowCastController.lua # Player-cast steps + UNIT_SPELLCAST_* events
+│   ├── PetAbilityCaster.lua  # Pet steps + PostClick press handling
+│   ├── WorkflowItemSteps.lua # createItem/equipItem + item waits
+│   ├── WorkflowBindings.lua  # Key Bindings menu entries + secure buttons + bindings
+│   ├── StateMachine.lua      # Mixin: init-once guard + validated setState
+│   ├── Preconditions.lua     # Shared readiness gates for both orchestrators
 │   ├── UI/
 │   │   ├── Widgets.lua       # Reusable options widgets (ACP.UI.*: Box/Header/Divider/
 │   │   │                     #   Checkbox/Slider/Button/StatusLine/Dropdown/TextInput/
 │   │   │                     #   ScrollFrame + geometry constants)
-│   │   └── WorkflowUI.lua    # "Workflows" subcategory content (ACP.WorkflowUI)
+│   │   └── WorkflowUI.lua    # "Workflows" subcategory content — pure layout/render
 │   └── OptionsUI.lua         # Interface Options panel + /acp slash command
 └── Utils/                    # Utilities
     ├── Items.lua             # Item helpers (find by ID, counters, bag search)
@@ -189,6 +203,9 @@ The addon has an automated unit-test suite in `Tests/` that runs under **LuaJIT*
 17. **Workflow chat messages are debug-only.** started/resumed/paused/done, press prompts, pause reasons and the cast-dropped diagnostic all go through `ACP:debugPrint` (`/acp debug` to see them); `/acp status` and slash-command responses stay visible.
 18. **Pet-ability verification (2026-08-22).** The client silently swallows a pet ability pressed EARLY in the player's cast (Sacrifice at +2s of a 6s summon did nothing; +5s fired, live-verified). The engine does NOT mark the pet step done on the press itself — `isPetAbilityApplied(step)` checks the ability's effect (buff present on the target by NAME, e.g. Fire Shield / Sacrifice shield, or the Voidwalker gone while the cast is in progress); an unverified press keeps the step armed (`armPetVerify` poll every 0.1s) — the user spams the key until the ability finally applies near the end of the cast.
 19. **Spell-ID guard on SENT/START (2026-08-22).** The player's own manual casts also fire `UNIT_SPELLCAST_SENT`. When the engine is `waitingForKey`, a manual cast with a different spellID would be treated as the workflow key press → engine transitions to `waitingForCast` → the manual cast's STOP triggers `onCastComplete` → the workflow step is **skipped without being cast**. Guard: only accept SENT/START when `spellID == self.pendingCastSpellID`.
+20. **Spellbook scan REMOVED (2026-08-24, user decision).** The probe-based live spellbook scan never actually ran (`return X and pcall(...)` truncates pcall's second value — `and` yields ONE value, so `count` was always nil and the scan loop was dead code), and the earlier working-scan variant was REJECTED (2026-08-21) because it exposed every learned spell in "+ Add step". The runtime catalog is now rebuilt from the STATIC data only: a Warlock gets the full class-gated static catalog (pets + stone ranks merged first, then the rest), other classes get an EMPTY catalog. `Classes/SpellbookScanner.lua` is deleted. Do not reintroduce a live scan without a user decision.
+21. **Slot key = TWO keys (fixed 2026-08-24).** A command can be bound to two keys in the Key Bindings UI. `applySlotBindings` puts the priority override on BOTH keys (the second key otherwise only fired the `ACP_WORKFLOW<i>` start action — a no-op while running — and could never cast an armed step), and `WorkflowKeybindController:setSlotKey` clears BOTH on rebind. ROOT CAUSE PATTERN: `GetBindingKey and GetBindingKey(command)` drops the second return value (`and` truncates to one) — use `local a, b = fn()`.
+22. **Refactor structure (2026-08-24):** after the architecture refactor (`.ai/docs/architecture-review-refactoring-plan.md` phases 0-7), the workflow engine/spellbook/settings are facade + extracted modules (see ARCHITECTURE.md ADRs 8-17). Extracted modules operate on the facade's state table (first argument = the engine/spellbook); the facades keep thin delegating methods so public surfaces are unchanged. New modules MUST be added to the TOC AND to `Tests/loader.lua` (its own file list) AND to the luacov include list.
 
 ---
 
@@ -237,10 +254,10 @@ subcategories (built with `Settings.RegisterCanvasLayoutSubcategory` — the leg
   scrollable rows: two-line spell cell with name + `SpellID: <id>` (pet-ability steps show a `pet ability` hint), fixed Target and
   "Skip if buffed" columns that render an explicit `Not available` state when a parameter
   does not apply, right-aligned `↑`/`↓`/`Delete` actions). `equipItem` rows show the item
-  name + `ItemID: <id>` instead (no rank/target/skip). "+ Add step" lists each learned
-  spell as a plain name (no rank/SpellID decoration) grouped by category, built from a
-  scan of the ACTIVE character's spellbook (never a hardcoded class list — the Warlock
-  static fallback is class-gated and the scan re-runs on PLAYER_LOGIN + SPELLS_CHANGED);
+  name + `ItemID: <id>` instead (no rank/target/skip). "+ Add step" lists each spell as a
+  plain name (no rank/SpellID decoration) grouped by category, built from the STATIC
+  Warlock catalog (the live spellbook scan was REMOVED — gotcha #20; the class-gated
+  catalog rebuilds on PLAYER_LOGIN + SPELLS_CHANGED);
   the **Pet abilities** category (Fire Shield [Imp, party-castable], Sacrifice [Voidwalker]) and the **Equip items** category
   (spellstones → `equipItem` steps) appear only for Warlocks, and stone-creating spells are
   listed per rank with the stone's name (`Create Master Healthstone`, `Create Major

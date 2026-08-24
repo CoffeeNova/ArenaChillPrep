@@ -19,7 +19,6 @@ local _, ACP = ...;
 local GetTime = _G.GetTime;
 local IsInInstance = _G.IsInInstance;
 local GetPlayerAuraBySpellID = C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID or nil;
-local GetAuraDataByIndex = C_UnitAuras and C_UnitAuras.GetAuraDataByIndex or nil;
 
 ---@class ArenaPrep
 local ArenaPrep = {
@@ -27,9 +26,6 @@ local ArenaPrep = {
 
     ---@type boolean
     buffActive = false,
-
-    ---@type number|nil
-    buffExpirationTime = nil,
 
     ---@type number|nil
     countdownEndTime = nil,
@@ -41,55 +37,25 @@ local ArenaPrep = {
 ---@type ArenaPrep
 ACP.ArenaPrep = ArenaPrep;
 
---- Maximum aura index scanned by the spellID fallback lookup.
-local MAX_AURA_INDEX = 40;
-
---- Scan the player's auras for the prep buff.
+--- Whether the prep buff is active right now. The only lookup is the direct
+--- spellID form (verified present on 20506 — /dump 2026-08-24). The former
+--- index-based GetAuraDataByIndex fallback and the aura-expiration tracking
+--- were REMOVED (W15, 2026-08-24): the primary API always exists on 20506 and
+--- the prep aura reports expirationTime = 0, so both paths were dead-on-target.
 ---@return boolean active
----@return number|nil expirationTime
 function ArenaPrep:scanBuff()
-    local spellID = ACP.Data.Constants.ARENA_PREP_SPELL_ID;
-    local unit = "player";
+    local aura = GetPlayerAuraBySpellID(ACP.Data.Constants.ARENA_PREP_SPELL_ID);
 
-    -- Primary: direct lookup by spellID.
-    if (GetPlayerAuraBySpellID) then
-        local aura = GetPlayerAuraBySpellID(spellID);
-
-        if (aura) then
-            return true, aura.expirationTime;
-        end
-
-        return false, nil;
-    end
-
-    -- Fallback: iterate the object-based aura API by index.
-    if (GetAuraDataByIndex) then
-        for i = 1, MAX_AURA_INDEX do
-            local aura = GetAuraDataByIndex(unit, i, "HELPFUL");
-
-            if (not aura) then
-                break;
-            end
-
-            if (aura.spellId == spellID) then
-                return true, aura.expirationTime;
-            end
-        end
-
-        return false, nil;
-    end
-
-    return false, nil;
+    return aura ~= nil;
 end
 
 --- Forced re-check of the buff state. Fires ACP_BUFF_GAINED / ACP_BUFF_LOST on
 --- state changes. Called on UNIT_AURA ("player"), PLAYER_ENTERING_WORLD, on the
 --- 1 s safety ticker while active, and once at addon load (/reload-in-arena).
 function ArenaPrep:checkNow()
-    local active, expirationTime = self:scanBuff();
+    local active = self:scanBuff();
 
     if (active) then
-        self.buffExpirationTime = expirationTime;
         self.bracket = self:computeBracket();
         self:startTicker();
 
@@ -100,7 +66,6 @@ function ArenaPrep:checkNow()
             self.countdownEndTime = GetTime() + ACP.Data.Constants.ARENA_PREP_SECONDS;
         end
     else
-        self.buffExpirationTime = nil;
         self.bracket = nil;
         self.countdownEndTime = nil;
         self:stopTicker();
@@ -141,21 +106,15 @@ end
 
 --- Seconds until the gates open, or nil when the countdown is unknown (the
 --- gate check then does not block). Clamped at 0 so an expired countdown never
---- passes a gate safety comparison.
---- Priority: countdown messages (verified working on 2.5.5); fallback: aura
---- expirationTime (reports 0 for the prep buff on 2.5.5 — usually unavailable).
+--- passes a gate safety comparison. Source: the countdown messages (verified
+--- working on 2.5.5) — the former aura-expiration fallback was REMOVED
+--- (W15, 2026-08-24: the prep aura reports expirationTime = 0).
 ---@return number|nil
 function ArenaPrep:getRemainingTime()
     local now = GetTime();
 
     if (self.countdownEndTime) then
         local remaining = self.countdownEndTime - now;
-
-        return remaining > 0 and remaining or 0;
-    end
-
-    if (self.buffExpirationTime) then
-        local remaining = self.buffExpirationTime - now;
 
         return remaining > 0 and remaining or 0;
     end

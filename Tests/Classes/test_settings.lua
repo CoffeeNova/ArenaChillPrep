@@ -228,6 +228,16 @@ function testResetRestoresDefaults()
     freshSettings();
 end
 
+function testMigrateWorkflowNamesReplacesPlaceholderNames()
+    -- The placeholder-name replacement (SettingsMigrator) — user-created
+    -- names must stay untouched.
+    local workflows = { definitions = { { name = "Full prep" }, { name = "Custom" }, { name = "Keep Me" } } };
+    ACP.SettingsMigrator:migrateWorkflowNames(workflows);
+    lu.assertEquals(workflows.definitions[1].name, "2s full prep");
+    lu.assertEquals(workflows.definitions[2].name, "");
+    lu.assertEquals(workflows.definitions[3].name, "Keep Me");
+end
+
 -- Restore pure defaults after the suite so later suites see a clean DB.
 function teardownSuite()
     freshSettings();

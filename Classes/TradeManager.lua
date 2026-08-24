@@ -3,7 +3,9 @@
 --
 -- Flow:
 --   startTrade(unit) -> InitiateTrade
---   TRADE_SHOW       -> partner verification, start FIFO placement queue
+--   TRADE_SHOW       -> partner verification, ACP_TRADE_OPENED (the
+--                       DeliveryController fills the item queue via
+--                       TradePlanner), start FIFO placement queue
 --   placement        -> one item per tick: findItemInBags (skip soulbound)
 --                       -> UseContainerItem (auto-places into the next slot)
 --   ITEM_UNLOCKED    -> re-queue items the game removed (< 0.5 s)
@@ -64,7 +66,6 @@ function TradeManager:startTrade(unit)
     self.ItemsAdded = {};
 
     ACP:debugPrint("initiating trade with %s", unit);
-    ACP.Events:fire("ACP_TRADE_START", unit);
 
     InitiateTrade(unit);
 end
@@ -90,12 +91,15 @@ end
 --- Resolve an item's GUID by bag/slot. On 2.5.5 C_Item.GetItemGUID takes an
 --- ItemLocation, not (bag, slot) — create the location first. Returns nil if
 --- the item doesn't exist or the location is incomplete
---- (ITEM_UNLOCKED can arrive with a bag-only reference).
+--- (ITEM_UNLOCKED can arrive with a bag-only reference). The ItemLocation /
+--- C_Item.GetItemGUID / DoesItemExist APIs are verified present on 20506
+--- (/dump 2026-08-24 — the former API-existence guards were always-true and
+--- were removed with W15).
 ---@param bag number
 ---@param slot number
 ---@return string|nil
 function TradeManager:getItemGUID(bag, slot)
-    if (not bag or not slot or not _G.ItemLocation or not _G.C_Item or not _G.C_Item.GetItemGUID) then
+    if (not bag or not slot) then
         return nil;
     end
 
@@ -105,13 +109,28 @@ function TradeManager:getItemGUID(bag, slot)
         return nil;
     end
 
-    return _G.C_Item.GetItemGUID(location);
+    return C_Item.GetItemGUID(location);
+end
+
+--- Replace the low-level placement queue with `itemIDs`. The WHAT-to-pass
+--- decision (which items, which ranks) lives in ACP.TradePlanner — the
+--- orchestrator hands TradeManager a plain item list to place. Called when the
+--- trade window opens (ACP_TRADE_OPENED), before the FIFO ticker starts.
+---@param itemIDs table
+function TradeManager:queueItems(itemIDs)
+    self.ItemsToAdd = (type(itemIDs) == "table") and itemIDs or {};
+end
+
+--- The unit token of the trade currently in progress (nil when idle).
+---@return string|nil
+function TradeManager:getPartner()
+    return self.partnerUnit;
 end
 
 --- Process one queued item (FIFO). Called by the placement ticker.
 function TradeManager:processItemQueue()
     -- Never touch items if the window is gone.
-    if (not TradeFrame:IsShown()) then
+    if (not TradeFrame or not TradeFrame:IsShown()) then
         ACP.Utils.Timers:cancel("TradeItemQueue");
         return;
     end
@@ -145,6 +164,11 @@ function TradeManager:processItemQueue()
 
     -- UseContainerItem with the window open auto-places into the next slot.
     local useContainerItem = _G.UseContainerItem or (C_Container and C_Container.UseContainerItem);
+
+    if (not useContainerItem) then
+        return;
+    end
+
     useContainerItem(bag, slot);
 end
 
@@ -178,11 +202,11 @@ function TradeManager:_init()
         if (self.trading) then
             -- Cancel the one-shot open timeout directly AND via the event
             -- (belt and suspenders — never let a stale timer kill a live
-            -- trade).
+            -- trade). ACP_TRADE_OPENED makes the DeliveryController fill the
+            -- placement queue (TradePlanner) before the ticker starts.
             ACP.Utils.Timers:cancel("TradeOpen");
             ACP.Events:fire("ACP_TRADE_OPENED", self.partnerUnit);
 
-            self:queueConfiguredItems();
             self:startItemQueue();
         end
     end);
@@ -237,62 +261,6 @@ function TradeManager:_init()
             self.ItemsAdded[itemGUID] = nil;
         end
     end);
-end
-
---- Queue the configured items for the current class (from Settings + Inventory).
---- Places `count` items of EVERY selected rank (ranks grouped by catalog
---- `rank`; paired IDs are one rank). The controller only calls this once ALL
---- selected ranks are ready, so each rank has enough items to queue.
-function TradeManager:queueConfiguredItems()
-    local classItems = ACP.Data.Items.classItems;
-    local englishClass = select(2, UnitClass("player"));
-    local categories = classItems[englishClass] or {};
-
-    self.ItemsToAdd = {};
-
-    for _, category in ipairs(categories) do
-        local settingsKey = category:sub(1, -2);
-        local setting = ACP.Settings:get("items." .. settingsKey);
-
-        if (setting and setting.enabled) then
-            local needed = setting.count or 1;
-            local catalog = ACP.Data.Items[category] or {};
-            local queuedByRank = {}; -- rank -> number (how many queued)
-
-            for itemID, enabled in pairs(setting.ranks or {}) do
-                if (enabled) then
-                    local record = catalog[itemID];
-
-                    if (record) then
-                        local rank = record.rank;
-
-                        if (not queuedByRank[rank]) then
-                            queuedByRank[rank] = 0;
-                        end
-
-                        -- Queue up to the remaining need for this rank, using
-                        -- whatever ID of the rank we actually have.
-                        local rankNeed = needed - queuedByRank[rank];
-
-                        if (rankNeed > 0) then
-                            local count = ACP.Inventory:getCount(itemID);
-                            local toAdd = math.min(count, rankNeed);
-
-                            for _ = 1, toAdd do
-                                tinsert(self.ItemsToAdd, itemID);
-                            end
-
-                            queuedByRank[rank] = queuedByRank[rank] + toAdd;
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    if (#self.ItemsToAdd > 0) then
-        ACP:debugPrint("placing %d item(s) into the trade window", #self.ItemsToAdd);
-    end
 end
 
 return ACP;

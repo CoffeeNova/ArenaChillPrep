@@ -58,12 +58,11 @@ function OptionsUI:rankIsEnabled(settingsKey, rank)
     return false;
 end
 
---- Write a boolean setting and update the persisted SavedVariables.
+--- Write a boolean setting (Settings:set persists the SavedVariables itself).
 ---@param path string
 ---@param value any
 local function setSetting(path, value)
     ACP.Settings:set(path, value);
-    ACP.Settings:persist();
 end
 
 --- Handler for the /acp slash command.
@@ -603,6 +602,12 @@ function OptionsUI:_init()
     self._initialized = true;
 
     self:buildPanel();
+
+    -- Settings:reset() re-syncs the panel via the event bus (no reverse
+    -- data → UI call — see W6).
+    ACP.Events:register("OptionsUI.SETTINGS_RESET", "ACP_SETTINGS_RESET", function()
+        self:refresh();
+    end);
 
     SLASH_ACP1 = "/acp";
     SLASH_ACP2 = "/arenachillprep";

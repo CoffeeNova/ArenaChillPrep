@@ -26,12 +26,24 @@ Utils/Timers.lua
 
 Classes/Events.lua
 Classes/Settings.lua
+Classes/SettingsMigrator.lua
+Classes/WorkflowRepository.lua
+Classes/WorkflowKeybindController.lua
+Classes/TradePlanner.lua
+Classes/StateMachine.lua
+Classes/Preconditions.lua
+Classes/SpellbookCatalogBuilder.lua
+Classes/WarlockCatalogExtender.lua
+Classes/SpellbookLabels.lua
 Classes/WorkflowSpellbook.lua
 Classes/ArenaPrep.lua
 Classes/Inventory.lua
 Classes/DeliveryController.lua
 Classes/TradeManager.lua
 Classes/WorkflowEngine.lua
+Classes/WorkflowCastController.lua
+Classes/PetAbilityCaster.lua
+Classes/WorkflowItemSteps.lua
 Classes/WorkflowBindings.lua
 Classes/UI/Widgets.lua
 Classes/UI/WorkflowUI.lua

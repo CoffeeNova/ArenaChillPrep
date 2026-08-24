@@ -99,10 +99,6 @@ local strings = {
             bindingUnavailable = "The active key binding set is not available yet.",
             bindingInvalid = "That key cannot be bound.",
             slotLimit = "Workflow limit reached (%d slots)",
-            keybindHeader = "Key bindings",
-            keybindHint = "Change key: ESC > Key Bindings > ArenaChillPrep",
-            slotBinding = "Slot %d:",
-            notBound = "Not bound",
             bindingWorkflow = "Workflow %d",
             bindingsInit = "Workflow keybindings registered (%d slots)",
             -- Status line (top of the Workflows tab)
@@ -111,9 +107,7 @@ local strings = {
             enabledWord = "Enabled",
             disabledWord = "Disabled",
             slotStatusLabel = "Slot %d: %s",
-            keyStatusLabel = "Key: %s",
             stepsStatusLabel = "Steps: %d",
-            activationKeyLabel = "Activation key: %s",
             -- Step types
             stepCast = "Cast",
             stepSummon = "Summon",
@@ -266,10 +260,6 @@ local strings = {
             bindingUnavailable = "Активный набор клавиш пока недоступен.",
             bindingInvalid = "Эту клавишу нельзя назначить.",
             slotLimit = "Достигнут лимит сценариев (%d слотов)",
-            keybindHeader = "Клавиши",
-            keybindHint = "Изменить клавишу: ESC > Назначение клавиш > ArenaChillPrep",
-            slotBinding = "Слот %d:",
-            notBound = "Не назначено",
             bindingWorkflow = "Сценарий %d",
             bindingsInit = "Клавиши сценариев зарегистрированы (%d слотов)",
             -- Status line (top of the Workflows tab)
@@ -278,9 +268,7 @@ local strings = {
             enabledWord = "включён",
             disabledWord = "выключен",
             slotStatusLabel = "Слот %d: %s",
-            keyStatusLabel = "Клавиша: %s",
             stepsStatusLabel = "Шагов: %d",
-            activationKeyLabel = "Клавиша активации: %s",
             -- Step types
             stepCast = "Каст",
             stepSummon = "Призыв",

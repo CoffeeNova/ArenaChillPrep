@@ -1,5 +1,6 @@
 -- ArenaChillPrep — Classes/UI/WorkflowUI
--- Character-local workflow editor. The editor is built around:
+-- Character-local workflow editor — PURE LAYOUT/RENDER (refactor Phase 6).
+-- The editor is built around:
 --   select a slot -> assemble/check the sequence -> run it by key.
 --
 -- Layout (top -> bottom):
@@ -8,30 +9,25 @@
 --   workflow editor    — selector, add workflow, name, enabled, key bind
 --   steps              — table header + scrollable step list filling the rest
 --
+-- Data operations (CRUD, step building, settings paths) live in
+-- ACP.WorkflowRepository; key-binding I/O lives in
+-- ACP.WorkflowKeybindController. This module only renders and delegates.
+--
 -- Spell choices come from ACP.WorkflowSpellbook: Add Step shows one entry per
 -- learned spell name (plain name only). Each step always uses the highest
 -- learned rank — rank is not user-selectable.
 ---@type ACP
 local _, ACP = ...;
 
-local pairs = _G.pairs;
 local ipairs = _G.ipairs;
-local tremove = _G.tremove;
 local tostring = _G.tostring;
-local tonumber = _G.tonumber;
 local select = _G.select;
 local table_concat = _G.table.concat;
 local math_max = _G.math.max;
 local math_ceil = _G.math.ceil;
-local GetBindingKey = _G.GetBindingKey;
-local GetBindingAction = _G.GetBindingAction;
 local GetSpellInfo = _G.GetSpellInfo;
 local UnitClass = _G.UnitClass;
 local CreateFrame = _G.CreateFrame;
-local SetBinding = _G.SetBinding;
-local GetCurrentBindingSet = _G.GetCurrentBindingSet;
-local SaveBindings = _G.SaveBindings;
-local GameTooltip = _G.GameTooltip;
 
 local SECTION_GAP = 8;
 local STATUS_H = 24;
@@ -48,9 +44,9 @@ local FIELD_X = 74;
 local ACTIONS_GAP = 4;
 local BUTTON_PAD = 10;
 
--- CLASS_WARLOCK is NOT a global on TBC Anniversary FrameXML — same guard as
--- Data/Items.lua and Classes/WorkflowSpellbook.lua.
-local CLASS_WARLOCK = _G.CLASS_WARLOCK or "WARLOCK";
+-- CLASS_WARLOCK is NOT a global on TBC Anniversary FrameXML — guarded single
+-- source lives in Data/Constants.
+local CLASS_WARLOCK = ACP.Data.Constants.CLASS_WARLOCK;
 
 ---@class WorkflowUI
 local WorkflowUI = {
@@ -70,6 +66,50 @@ local WorkflowUI = {
 
 ---@type WorkflowUI
 ACP.WorkflowUI = WorkflowUI;
+
+-- -- -- data/binding delegates (single sources: WorkflowRepository +
+-- WorkflowKeybindController) -- --
+
+local function definitionPath(slot)
+    return ACP.WorkflowRepository:definitionPath(slot);
+end
+
+local function stepPath(slot, index)
+    return ACP.WorkflowRepository:stepPath(slot, index);
+end
+
+local function workflowCount()
+    return ACP.WorkflowRepository:workflowCount();
+end
+
+local function selectedSteps(slot)
+    return ACP.WorkflowRepository:getSteps(slot);
+end
+
+local function selectedKey(slot)
+    return ACP.WorkflowKeybindController:getSlotKey(slot);
+end
+
+local function findSpell(spellID)
+    return ACP.WorkflowRepository:findSpell(spellID);
+end
+
+local function setSetting(path, value)
+    ACP.Settings:set(path, value);
+end
+
+--- Getter/setter closure pair bound to a settings dot path — the repeated
+--- control-binding boilerplate (W13), collapsed into one helper.
+---@param path string
+---@return function getter
+---@return function setter
+local function bindPath(path)
+    return function()
+        return ACP.Settings:get(path);
+    end, function(value)
+        setSetting(path, value);
+    end;
+end
 
 local measureFont;
 
@@ -106,71 +146,11 @@ local function actionLayout()
     return actionLayoutCache;
 end
 
-local function setSetting(path, value)
-    ACP.Settings:set(path, value);
-end
-
-local function persistSettings()
-    if (ACP.Settings.persist) then
-        ACP.Settings:persist();
-    end
-end
-
-local function stepsPath(slot)
-    return "workflows.definitions." .. tostring(slot) .. ".steps";
-end
-
-local function stepPath(slot, index)
-    return stepsPath(slot) .. "." .. tostring(index);
-end
-
-local function selectedSteps(slot)
-    local steps = ACP.Settings:get(stepsPath(slot));
-    return (type(steps) == "table") and steps or {};
-end
-
-local function workflowCount()
-    local C = ACP.Data.Constants;
-    local count = tonumber(ACP.Settings:get("workflows.slotCount")) or C.WORKFLOW_DEFAULT_SLOTS;
-
-    if (count < C.WORKFLOW_DEFAULT_SLOTS) then
-        count = C.WORKFLOW_DEFAULT_SLOTS;
-    end
-
-    if (count > C.WORKFLOW_MAX_SLOTS) then
-        count = C.WORKFLOW_MAX_SLOTS;
-    end
-
-    return count;
-end
-
-local function selectedKey(slot)
-    local key = (GetBindingKey and GetBindingKey("ACP_WORKFLOW" .. tostring(slot))) or "";
-    return (key ~= "") and key or nil;
-end
-
--- Same key whitelist as UI.Keybind (letters/digits OR punctuation characters
--- like ";" / "[" / "/", optional SHIFT-/CTRL-/ALT- prefix, or named keys).
--- SetBinding with anything else could corrupt bindings-cache.wtf and kill ALL
--- keybindings after the next /reload.
--- NOTE: Lua patterns have no `|` alternation, so the modifier prefix is
--- stripped with gsub before the base check.
-local function isSafeBindingKey(key)
-    if (type(key) ~= "string" or key == "") then
-        return false;
-    end
-
-    local base = key:gsub("SHIFT%-", ""):gsub("CTRL%-", ""):gsub("ALT%-", "");
-    return base:match("^[%w%p]+$") ~= nil;
-end
-
 local function spellLabel(spellID, fallback)
-    if (GetSpellInfo) then
-        local name = select(1, GetSpellInfo(spellID));
+    local name = select(1, GetSpellInfo(spellID));
 
-        if (name) then
-            return name;
-        end
+    if (name) then
+        return name;
     end
 
     return fallback or ("#" .. tostring(spellID));
@@ -201,62 +181,13 @@ end
 ---@param step table
 ---@return string
 local function itemLabel(step)
-    if (GetItemInfo) then
-        local ok, name = pcall(GetItemInfo, step.itemID);
+    local ok, name = pcall(GetItemInfo, step.itemID);
 
-        if (ok and name) then
-            return name;
-        end
+    if (ok and name) then
+        return name;
     end
 
     return (type(step.itemName) == "string" and step.itemName ~= "") and step.itemName or ("#" .. tostring(step.itemID));
-end
-
-local function findSpell(spellID)
-    if (ACP.WorkflowSpellbook and ACP.WorkflowSpellbook.getEntry) then
-        local entry = ACP.WorkflowSpellbook:getEntry(spellID);
-
-        if (entry) then
-            return entry, entry.category;
-        end
-    end
-
-    local spells = ACP.Data.Workflows and ACP.Data.Workflows.spells;
-
-    if (spells) then
-        -- Match by exact spellID first (covers the catalog's known rank IDs).
-        for category, list in pairs(spells) do
-            for _, entry in ipairs(list) do
-                if (entry.spellID == spellID) then
-                    entry.category = category;
-                    return entry, category;
-                end
-            end
-        end
-
-        -- Fallback for a learned rank ID the static catalog does not list (the
-        -- scan is class-gated to a limited fallback, so a saved step whose
-        -- spellID is a non-catalog rank would otherwise lose its metadata and
-        -- render "Not available" for Target/Skip). Match the spell by its
-        -- localized name instead, then borrow the catalog entry's behavior.
-        if (GetSpellInfo) then
-            local ok, name = pcall(GetSpellInfo, spellID);
-
-            if (ok and name) then
-                for category, list in pairs(spells) do
-                    for _, entry in ipairs(list) do
-                        if (entry.name == name
-                            or (GetSpellInfo and select(1, GetSpellInfo(entry.spellID)) == name)) then
-                            entry.category = category;
-                            return entry, category;
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    return nil;
 end
 
 local function spellGroups()
@@ -283,28 +214,8 @@ local function targetItems()
 end
 
 --- Attach a GameTooltip tooltip to any mouse-capable widget (control or
---- FontString). FontStrings need EnableMouse(true) to receive OnEnter/OnLeave.
----@param widget Frame
----@param tooltipText string|nil
-local function attachTooltip(widget, tooltipText)
-    if (not tooltipText) then
-        return;
-    end
-
-    if (widget.EnableMouse) then
-        widget:EnableMouse(true);
-    end
-
-    widget:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
-        GameTooltip:SetText(tooltipText, 1, 1, 1, 1, true);
-        GameTooltip:Show();
-    end);
-
-    widget:SetScript("OnLeave", function()
-        GameTooltip:Hide();
-    end);
-end
+--- FontString). Shared with Widgets (ACP.UI.attachTooltip).
+local attachTooltip = ACP.UI.attachTooltip;
 
 --- Plain spell name for the Add Step menu. No rank/spellID decoration — the
 --- step always uses the highest learned rank of that name.
@@ -393,7 +304,7 @@ local function workflowItems()
     local items = {};
 
     for slot = 1, workflowCount() do
-        local definition = ACP.Settings:get("workflows.definitions." .. slot);
+        local definition = ACP.Settings:get(definitionPath(slot));
         local name = type(definition) == "table" and definition.name or "";
         local label = tostring(slot);
 
@@ -412,20 +323,13 @@ end
 
 function WorkflowUI:addWorkflow()
     local C = ACP.Data.Constants;
-    local count = workflowCount();
+    local slot = ACP.WorkflowRepository:addWorkflow();
 
-    if (count >= C.WORKFLOW_MAX_SLOTS) then
+    if (not slot) then
         ACP:print(ACP.L.workflow.slotLimit, C.WORKFLOW_MAX_SLOTS);
         return;
     end
 
-    local slot = count + 1;
-    setSetting("workflows.slotCount", slot);
-    setSetting("workflows.definitions." .. slot, {
-        enabled = false,
-        name = "",
-        steps = {}
-    });
     self.SelectedSlot = slot;
     self:refresh();
 end
@@ -443,66 +347,16 @@ function WorkflowUI:deleteWorkflow()
     local slot = self.SelectedSlot;
 
     if (count <= C.WORKFLOW_DEFAULT_SLOTS) then
-        setSetting("workflows.definitions." .. slot, {
-            enabled = false,
-            name = "",
-            steps = {}
-        });
-        self:setSelectedKey(nil);
+        ACP.WorkflowRepository:deleteWorkflow(slot);
+        ACP.WorkflowKeybindController:setSlotKey(slot, nil);
         self:refresh();
         return;
     end
 
-    -- Capture the keys of the affected commands BEFORE unbinding anything, so
-    -- the shifted workflows keep their bindings under their new slot numbers.
-    local keys = {};
-    local keys2 = {};
-    local ok = true;
-
-    if (SetBinding and SaveBindings and GetCurrentBindingSet) then
-        for i = slot, count do
-            local key1, key2 = GetBindingKey("ACP_WORKFLOW" .. tostring(i));
-            keys[i] = key1;
-            keys2[i] = key2;
-        end
-
-        ok = pcall(function()
-            for i = slot, count do
-                if (keys[i]) then
-                    SetBinding(keys[i], nil);
-                end
-                if (keys2[i]) then
-                    SetBinding(keys2[i], nil);
-                end
-            end
-
-            for i = slot, count - 1 do
-                local command = "ACP_WORKFLOW" .. tostring(i);
-                if (keys[i + 1]) then
-                    SetBinding(keys[i + 1], command);
-                end
-                if (keys2[i + 1]) then
-                    SetBinding(keys2[i + 1], command);
-                end
-            end
-
-            local bindingSet = GetCurrentBindingSet();
-
-            if (bindingSet == 1 or bindingSet == 2) then
-                SaveBindings(bindingSet);
-            else
-                error("binding set not loaded");
-            end
-        end);
-    end
-
-    for i = slot, count - 1 do
-        setSetting("workflows.definitions." .. tostring(i),
-            ACP.Settings:get("workflows.definitions." .. tostring(i + 1)));
-    end
-
-    setSetting("workflows.definitions." .. tostring(count), nil);
-    setSetting("workflows.slotCount", count - 1);
+    -- Shift the key bindings of the later slots down (hotkeys stay on the
+    -- right content), then shift the definitions.
+    local ok = ACP.WorkflowKeybindController:shiftBindingsAfterDelete(slot, count);
+    ACP.WorkflowRepository:deleteWorkflow(slot);
 
     if (not ok) then
         ACP:print(ACP.L.workflow.bindingUnavailable);
@@ -513,185 +367,35 @@ function WorkflowUI:deleteWorkflow()
 end
 
 function WorkflowUI:addStep(spellKey)
-    -- Equip-item entries use the "item:<id>" key convention.
-    local equipItemID = tonumber(type(spellKey) == "string" and spellKey:match("^item:(%d+)$") or nil);
-
-    if (equipItemID) then
-        self:addEquipItem(equipItemID);
-        return;
+    if (ACP.WorkflowRepository:addStep(self.SelectedSlot, spellKey)) then
+        self:refresh();
+        self:scrollToBottom();
     end
-
-    local entry;
-    local group;
-
-    if (type(spellKey) == "number") then
-        -- A specific rank (stone rank entry) or pet ability selected from the
-        -- Add Step list — the entry IS the target, no group resolution needed.
-        entry = ACP.WorkflowSpellbook and ACP.WorkflowSpellbook:getEntry(spellKey) or findSpell(spellKey);
-    else
-        group = ACP.WorkflowSpellbook and ACP.WorkflowSpellbook:getGroup(spellKey);
-
-        if (not group or not group.entries or #group.entries == 0) then
-            return;
-        end
-
-        entry = group.entries[#group.entries];
-    end
-
-    if (not entry) then
-        return;
-    end
-
-    local C = ACP.Data.Constants;
-    local category = entry.category or "other";
-    local stepType = (category == "summons" and C.WORKFLOW_STEP_SUMMON) or
-                         (category == "createItem" and C.WORKFLOW_STEP_CREATE_ITEM) or
-                         (entry.isPetSpell and C.WORKFLOW_STEP_PET) or C.WORKFLOW_STEP_CAST;
-    local step = {
-        type = stepType,
-        spellID = entry.spellID,
-        spellName = entry.name or (group and group.name)
-    };
-
-    if (stepType == C.WORKFLOW_STEP_CAST or (stepType == C.WORKFLOW_STEP_PET and entry.canTargetParty)) then
-        step.target = "player";
-    end
-
-    -- New buff-cast, summon and createItem steps default their skip flag to the
-    -- global "skip already-completed steps" setting. A buff step only gets the
-    -- flag when its cast actually applies a tracked buff (entry.buffSpellID).
-    if ((stepType == C.WORKFLOW_STEP_CAST and entry.buffSpellID)
-        or stepType == C.WORKFLOW_STEP_SUMMON
-        or stepType == C.WORKFLOW_STEP_CREATE_ITEM) then
-        step.skipIfBuffed = ACP.Settings:get("workflows.skipIfBuffedDefault") == true;
-    end
-
-    if (entry.itemID) then
-        step.itemID = entry.itemID;
-    end
-
-    local steps = selectedSteps(self.SelectedSlot);
-    steps[#steps + 1] = step;
-    persistSettings();
-    self:refresh();
-    self:scrollToBottom();
-end
-
---- Add an equipItem step (conjured item, e.g. a spellstone) to the end of the
---- selected workflow. The engine equips it through the secure hotkey, so the
---- row shows the item name and needs no rank/target/skip options.
----@param itemID number
-function WorkflowUI:addEquipItem(itemID)
-    local entry = ACP.Data.Workflows and ACP.Data.Workflows:getEquipItem(itemID);
-    local step = {
-        type = "equipItem",
-        itemID = itemID,
-        itemName = (entry and entry.name) or nil
-    };
-    local steps = selectedSteps(self.SelectedSlot);
-    steps[#steps + 1] = step;
-    persistSettings();
-    self:refresh();
-    self:scrollToBottom();
 end
 
 function WorkflowUI:removeStep(index)
-    local steps = selectedSteps(self.SelectedSlot);
-
-    if (steps[index]) then
-        tremove(steps, index);
-        persistSettings();
+    if (ACP.WorkflowRepository:removeStep(self.SelectedSlot, index)) then
         self:refresh();
     end
 end
 
 function WorkflowUI:moveStep(index, delta)
-    local steps = selectedSteps(self.SelectedSlot);
-    local target = index + delta;
-
-    if (not steps[index] or not steps[target]) then
-        return;
-    end
-
-    steps[index], steps[target] = steps[target], steps[index];
-    persistSettings();
-    self:refresh();
-end
-
---- Steal `key` from whatever command currently owns it, so binding it to a
---- workflow matches the Key Bindings UI (ESC -> Key Bindings -> ArenaChillPrep):
---- a physical key drives exactly one action. `SetBinding(key, command)` alone
---- does not reliably clear the previous command's claim on 20506, so we
---- explicitly unbind it first. `keepCommand` is skipped (re-binding the same
---- key to the same slot is a no-op otherwise).
----@param key string
----@param keepCommand string
-local function unbindConflictingKey(key, keepCommand)
-    if (key == nil or key == "" or not GetBindingAction or not SetBinding) then
-        return;
-    end
-
-    local current = GetBindingAction(key);
-
-    if (current and current ~= "" and current ~= keepCommand) then
-        SetBinding(key, nil);
-    end
-end
-
---- Replace the current binding for the selected workflow slot. The active
---- binding set is saved immediately; 0 is rejected because SaveBindings(0)
---- crashes on 20506.
-function WorkflowUI:setSelectedKey(key)
-    if (not SetBinding or not SaveBindings or not GetCurrentBindingSet) then
-        ACP:print(ACP.L.workflow.bindingUnavailable);
-        return;
-    end
-
-    if (key and key ~= "" and not isSafeBindingKey(key)) then
-        ACP:print(ACP.L.workflow.bindingInvalid);
+    if (ACP.WorkflowRepository:moveStep(self.SelectedSlot, index, delta)) then
         self:refresh();
-        return;
     end
+end
 
-    local command = "ACP_WORKFLOW" .. tostring(self.SelectedSlot);
-    local old1, old2 = GetBindingKey and GetBindingKey(command);
-
-    local ok, err = pcall(function()
-        -- Steal the chosen key from whatever else it is bound to (another
-        -- workflow, a Blizzard default, or another addon) — same as the
-        -- in-game Key Bindings menu, so the key no longer drives the old action.
-        unbindConflictingKey(key, command);
-
-        if (old1) then
-            SetBinding(old1, nil);
-        end
-        if (old2) then
-            SetBinding(old2, nil);
-        end
-        if (key and key ~= "") then
-            SetBinding(key, command);
-        end
-
-        local bindingSet = GetCurrentBindingSet();
-
-        if (bindingSet == 1 or bindingSet == 2) then
-            SaveBindings(bindingSet);
-        else
-            error("binding set not loaded");
-        end
-    end);
-
-    if (not ok) then
-        ACP:print(ACP.L.workflow.bindingUnavailable);
-    end
-
+--- Replace the current binding for the selected workflow slot (delegates to
+--- the keybind controller — the UI does no raw SetBinding/SaveBindings I/O).
+function WorkflowUI:setSelectedKey(key)
+    ACP.WorkflowKeybindController:setSlotKey(self.SelectedSlot, key);
     self:refresh();
 end
 
 function WorkflowUI:scrollToBottom()
     local scroll = self.Controls.stepScroll;
 
-    if (scroll and scroll.SetVerticalScroll) then
+    if (scroll) then
         scroll:SetVerticalScroll(scroll:GetVerticalScrollRange());
     end
 end
@@ -876,6 +580,11 @@ function WorkflowUI:renderSteps()
         return;
     end
 
+    -- Preserve the scroll position across the rebuild (W17): the rows are
+    -- re-parented to the recycle frame on every refresh, which used to reset
+    -- the scroll to the top.
+    local scrollOffset = scroll:GetVerticalScroll();
+
     local child = scroll.ScrollChild;
 
     if (not self.RecycleFrame) then
@@ -918,6 +627,16 @@ function WorkflowUI:renderSteps()
     end
 
     scroll.Refresh();
+
+    if (scrollOffset and scrollOffset > 0) then
+        local max = scroll:GetVerticalScrollRange();
+
+        if (scrollOffset > max) then
+            scrollOffset = max;
+        end
+
+        scroll:SetVerticalScroll(scrollOffset);
+    end
 end
 
 function WorkflowUI:buildStatusBar(content, x, y, width)
@@ -946,15 +665,12 @@ end
 function WorkflowUI:buildDefaults(content, x, y, width)
     local L = ACP.L.workflow;
     local UI = ACP.UI;
+    local getSkipDefault, setSkipDefault = bindPath("workflows.skipIfBuffedDefault");
 
     UI.Header(content, L.workflowDefaultsHeader, x, y);
 
     self.Controls.skipIfBuffedDefault = UI.Checkbox(content, "ACPWorkflowSkipDefaultCheck", L.skipIfBuffedDefaultLabel,
-        x, y - 24, function()
-            return ACP.Settings:get("workflows.skipIfBuffedDefault");
-        end, function(value)
-            setSetting("workflows.skipIfBuffedDefault", value);
-        end, L.skipIfBuffedDefaultTooltip);
+        x, y - 24, getSkipDefault, setSkipDefault, L.skipIfBuffedDefaultTooltip);
 
     local desc = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall");
     desc:SetPoint("TOPLEFT", content, "TOPLEFT", x + 2, y - 48);
@@ -1007,18 +723,14 @@ function WorkflowUI:buildEditor(content, x, y, width)
     nameLabel:SetText(L.nameLabel .. ":");
     nameLabel:SetTextColor(0.7, 0.7, 0.7, 1);
 
-    Controls.workflowName = UI.TextInput(content, "ACPWorkflowNameInput", x + FIELD_X, row2 - 2, 240, 20, function()
-        return ACP.Settings:get("workflows.definitions." .. self.SelectedSlot .. ".name");
-    end, function(value)
-        setSetting("workflows.definitions." .. self.SelectedSlot .. ".name", value);
-    end, L.nameTooltip);
+    local getName, setName = bindPath(definitionPath(self.SelectedSlot) .. ".name");
+    local getEnabled, setEnabled = bindPath(definitionPath(self.SelectedSlot) .. ".enabled");
+
+    Controls.workflowName = UI.TextInput(content, "ACPWorkflowNameInput", x + FIELD_X, row2 - 2, 240, 20,
+        getName, setName, L.nameTooltip);
 
     Controls.workflowEnabled = UI.Checkbox(content, "ACPWorkflowSlotEnabledCheck", L.enabledLabel, x + FIELD_X + 254,
-        row2, function()
-            return ACP.Settings:get("workflows.definitions." .. self.SelectedSlot .. ".enabled");
-        end, function(value)
-            setSetting("workflows.definitions." .. self.SelectedSlot .. ".enabled", value);
-        end, L.workflowEnabledTooltip);
+        row2, getEnabled, setEnabled, L.workflowEnabledTooltip);
 
     -- Row 3: key bind + clear.
     local row3 = row2 - 28;
@@ -1107,6 +819,16 @@ function WorkflowUI:build(content, w, h)
     local width = w - margin * 2;
     local y = -margin;
 
+    -- The spellbook re-scan refreshes the Add Step list (and step rows) via an
+    -- event instead of a reverse UI call from WorkflowSpellbook (W6). Only
+    -- listening while the panel is actually built.
+    if (not self._spellbookListener) then
+        self._spellbookListener = true;
+        ACP.Events:register("WorkflowUI.SPELLBOOK_CHANGED", "ACP_SPELLBOOK_CHANGED", function()
+            self:refresh();
+        end);
+    end
+
     self.content = content;
     self.contentWidth = w;
     self.contentHeight = h;
@@ -1127,7 +849,7 @@ end
 function WorkflowUI:refresh()
     local Controls = self.Controls;
     local slot = self.SelectedSlot;
-    local definition = ACP.Settings:get("workflows.definitions." .. slot);
+    local definition = ACP.Settings:get(definitionPath(slot));
 
     if (Controls.skipIfBuffedDefault) then
         Controls.skipIfBuffedDefault:SetChecked(ACP.Settings:get("workflows.skipIfBuffedDefault") == true);
@@ -1172,7 +894,7 @@ function WorkflowUI:refreshStatus()
     local L = ACP.L.workflow;
     local engineOn = ACP.Settings:get("workflows.enabled") == true;
     local slot = self.SelectedSlot;
-    local definition = ACP.Settings:get("workflows.definitions." .. slot);
+    local definition = ACP.Settings:get(definitionPath(slot));
     local slotOn = type(definition) == "table" and definition.enabled == true or false;
 
     if (engineOn) then

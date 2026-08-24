@@ -8,6 +8,15 @@ ACP.Data = ACP.Data or {};
 
 ---@class Constants
 ACP.Data.Constants = {
+    -- CLASS_WARLOCK is NOT defined as a global on TBC Anniversary FrameXML
+    -- (retail-only constant). Guarded single source for the class-gated
+    -- catalogs (Data/Items, WorkflowSpellbook, WorkflowUI).
+    CLASS_WARLOCK = _G.CLASS_WARLOCK or "WARLOCK",
+
+    -- Default gate-safety threshold (seconds) used when the setting is
+    -- missing from SavedVariables.
+    GATE_SAFETY_DEFAULT = 15,
+
     -- Arena Preparation buff (spell ID, stable across locales).
     ARENA_PREP_SPELL_ID = 32727,
 
@@ -83,6 +92,43 @@ ACP.Data.Constants = {
 
     -- Target unit tokens a `cast` step may use (2v2/3v3/5v5).
     WORKFLOW_TARGETS = { "player", "party1", "party2", "party3", "party4" },
+
+    -- WorkflowEngine state machine values (WorkflowEngine.state).
+    WORKFLOW_STATE = {
+        IDLE = "IDLE",
+        RUNNING = "RUNNING",
+        PAUSED = "PAUSED",
+        DONE = "DONE",
+    },
+
+    -- DeliveryController state machine values (DeliveryController.state).
+    DELIVERY_STATE = {
+        IDLE = "IDLE",
+        ACTIVE = "ACTIVE",
+        TRADING = "TRADING",
+        DONE = "DONE",
+    },
+
+    -- WorkflowEngine pause reason keys (localized via
+    -- L.workflow["reason" .. reason]). Shared by the engine and its extracted
+    -- step modules (WorkflowCastController / PetAbilityCaster /
+    -- WorkflowItemSteps) — hence in Constants, not module-local.
+    WORKFLOW_REASON = {
+        EngineDisabled = "engineDisabled",
+        NotArena = "notArena",
+        InCombat = "inCombat",
+        Dead = "dead",
+        NoTarget = "noTarget",
+        Casting = "casting",
+        Moving = "moving",
+        NoShard = "noShard",
+        GateSafety = "gateSafety",
+        NoHotkey = "noHotkey",
+        CastTimeout = "castTimeout",
+        CastBlocked = "castBlocked",
+        CastInterrupted = "castInterrupted",
+        CastFailed = "castFailed",
+    },
 
     -- Step type strings (see Data/Workflows.validateStep).
     WORKFLOW_STEP_CAST = "cast",

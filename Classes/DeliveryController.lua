@@ -19,15 +19,16 @@ local pairs = _G.pairs;
 local TradeFrame = _G.TradeFrame;
 local UnitExists = _G.UnitExists;
 local UnitIsUnit = _G.UnitIsUnit;
-local UnitAffectingCombat = _G.UnitAffectingCombat;
-local UnitIsDeadOrGhost = _G.UnitIsDeadOrGhost;
+
+--- State machine values (Data/Constants.DELIVERY_STATE).
+local DS = ACP.Data.Constants.DELIVERY_STATE;
 
 ---@class DeliveryController
 local DeliveryController = {
     _initialized = false,
 
     --- "IDLE" | "ACTIVE" | "TRADING" | "DONE"
-    state = "IDLE",
+    state = DS.IDLE,
 
     --- Runtime-only set of partners already served this prep (unit tokens).
     --- Reset on ACP_BUFF_LOST; never persisted to ArenaChillPrepDB.
@@ -45,10 +46,7 @@ local DeliveryController = {
 ACP.DeliveryController = DeliveryController;
 
 function DeliveryController:setState(newState)
-    if (self.state ~= newState) then
-        ACP:debugPrint("state: %s -> %s", self.state, newState);
-        self.state = newState;
-    end
+    ACP.StateMachine:setState(self, newState, DS);
 end
 
 --- Reset everything for a fresh prep.
@@ -60,7 +58,7 @@ function DeliveryController:reset()
     ACP.Utils.Timers:cancel("TradeRetry");
     ACP.Utils.Timers:cancel("TradeOpen");
     ACP.Utils.Timers:cancel("DeliveryCheck");
-    self:setState("IDLE");
+    self:setState(DS.IDLE);
 end
 
 --- Whether the bracket is enabled in Settings; logs a message when disabled.
@@ -88,52 +86,19 @@ function DeliveryController:givenCount()
 end
 
 --- The set of item categories the current class can pass (from the catalog).
+--- Delegates to TradePlanner (single source for the class → items mapping).
 ---@return table
 function DeliveryController:getCategories()
-    local classItems = ACP.Data.Items.classItems;
-    local englishClass = select(2, UnitClass("player"));
-
-    return classItems[englishClass] or {};
+    return ACP.TradePlanner:getCategories();
 end
 
 --- Whether the selected ranks of an enabled category are ALL ready.
---- Ranks are grouped by their catalog `rank`: paired IDs (19012/19013 = Major)
---- count as ONE rank — the sum of their counts must reach `setting.count`.
+--- Delegates to TradePlanner (single source for the rank grouping).
 ---@param category string  plural catalog key ("healthstones")
 ---@param setting table
 ---@return boolean
 function DeliveryController:categoryReady(category, setting)
-    local needed = setting.count or 1;
-    local catalog = ACP.Data.Items[category] or {};
-    local countByRank = {}; -- rank -> number (sum of counts of selected IDs)
-
-    -- One pass over the selected ranks; paired IDs of one rank share the sum.
-    for itemID, enabled in pairs(setting.ranks or {}) do
-        if (enabled) then
-            local record = catalog[itemID];
-
-            if (record) then
-                local rank = record.rank;
-                countByRank[rank] = (countByRank[rank] or 0) + ACP.Inventory:getCount(itemID);
-            end
-        end
-    end
-
-    -- Every selected rank must reach `needed`.
-    local anySelected = false;
-
-    for rank, rankCount in pairs(countByRank) do
-        anySelected = true;
-
-        ACP:debugPrint("itemsReady: category=%s rank=%d count=%d needed=%d",
-            category, rank, rankCount, needed);
-
-        if (rankCount < needed) then
-            return false;
-        end
-    end
-
-    return anySelected;
+    return ACP.TradePlanner:categoryReady(category, setting);
 end
 
 --- Whether an enabled item category has every selected rank ready.
@@ -182,33 +147,32 @@ end
 --- Are we allowed to start a new trade right now?
 ---@return boolean
 function DeliveryController:canStartTrade()
-    if (not ACP.Settings:get("enabled")) then
+    if (not ACP.Preconditions:enabled()) then
         ACP:debugPrint("canStartTrade: disabled");
         return false;
     end
 
-    if (not ACP.ArenaPrep:isInArena()) then
+    if (not ACP.Preconditions:inArena()) then
         ACP:debugPrint("canStartTrade: not in arena");
         return false;
     end
 
-    if (UnitAffectingCombat("player")) then
+    if (not ACP.Preconditions:notInCombat()) then
         ACP:debugPrint("canStartTrade: in combat");
         return false;
     end
 
     -- A dead player cannot initiate a trade; retry after revival
     -- (PLAYER_REGEN_ENABLED / the ACTIVE ticker) if the buff is still active.
-    if (UnitIsDeadOrGhost("player")) then
+    if (not ACP.Preconditions:notDead()) then
         ACP:debugPrint("canStartTrade: player dead");
         return false;
     end
 
     -- Gate safety: never start a trade too close to the gates opening.
-    local gateSafety = ACP.Settings:get("gateSafetySeconds") or 15;
-    local remaining = ACP.ArenaPrep:getRemainingTime();
-
-    if (remaining ~= nil and remaining < gateSafety) then
+    if (not ACP.Preconditions:gateSafetyOk()) then
+        local gateSafety = ACP.Settings:get("gateSafetySeconds") or ACP.Data.Constants.GATE_SAFETY_DEFAULT;
+        local remaining = ACP.ArenaPrep:getRemainingTime();
         ACP:debugPrint("skipping trade: %0.1f s left, below gateSafetySeconds (%s)",
             remaining, tostring(gateSafety));
         return false;
@@ -221,7 +185,7 @@ end
 --- The heart of ACTIVE: if items are ready and a partner exists — schedule
 --- the trade after `tradeDelay`.
 function DeliveryController:checkReady()
-    if (self.state ~= "ACTIVE") then
+    if (self.state ~= DS.ACTIVE) then
         return;
     end
 
@@ -238,7 +202,7 @@ function DeliveryController:checkReady()
     local bracket = ACP.ArenaPrep:getBracket();
 
     if (bracket and not self:bracketEnabled(bracket)) then
-        self:setState("IDLE");
+        self:setState(DS.IDLE);
         return;
     end
 
@@ -257,7 +221,7 @@ function DeliveryController:checkReady()
 
         if (served > 0) then
             ACP:debugPrint("no eligible partner (givenTo: %d)", served);
-            self:setState("DONE");
+            self:setState(DS.DONE);
         else
             ACP:debugPrint("items ready but no partner found (are you in a group?)");
         end
@@ -270,7 +234,7 @@ function DeliveryController:checkReady()
 
     ACP.Utils.Timers:after("TradeDelay", tradeDelay, function()
         -- Re-check before actually sending the request.
-        if (self.state ~= "ACTIVE") then
+        if (self.state ~= DS.ACTIVE) then
             return;
         end
 
@@ -283,7 +247,7 @@ function DeliveryController:checkReady()
         end
 
         self.currentPartner = partner;
-        self:setState("TRADING");
+        self:setState(DS.TRADING);
         ACP.TradeManager:startTrade(partner);
 
         -- One-shot open timeout: InitiateTrade can fail silently (out of
@@ -291,7 +255,7 @@ function DeliveryController:checkReady()
         -- TRADE_CLOSED. Without this the controller would stay TRADING
         -- forever. ACP_TRADE_OPENED (window shown) cancels it.
         ACP.Utils.Timers:after("TradeOpen", ACP.Data.Constants.TRADE_OPEN_TIMEOUT, function()
-            if (self.state ~= "TRADING") then
+            if (self.state ~= DS.TRADING) then
                 return; -- already resolved (window opened / trade completed)
             end
 
@@ -316,7 +280,7 @@ end
 function DeliveryController:startCheckTicker()
     ACP.Utils.Timers:interval("DeliveryCheck", 0.5, function()
         -- Only poll while ACTIVE; checkReady enforces the pending-timer guards.
-        if (self.state ~= "ACTIVE") then
+        if (self.state ~= DS.ACTIVE) then
             ACP.Utils.Timers:cancel("DeliveryCheck");
             return;
         end
@@ -334,18 +298,18 @@ function DeliveryController:onBuffGained()
     -- defer the gate until it resolves, don't skip the prep outright.
     if (not bracket) then
         ACP:debugPrint("bracket unknown yet, deferring gate");
-        self:setState("ACTIVE");
+        self:setState(DS.ACTIVE);
         self:startCheckTicker();
         return;
     end
 
     if (not self:bracketEnabled(bracket)) then
-        self:setState("IDLE");
+        self:setState(DS.IDLE);
         return;
     end
 
     ACP:debugPrint("bracket %s enabled, prep active", bracket);
-    self:setState("ACTIVE");
+    self:setState(DS.ACTIVE);
     self:startCheckTicker();
     self:checkReady();
 end
@@ -357,7 +321,7 @@ end
 
 --- ACP_ITEMS_CHANGED: a crafted item appeared/changed — re-evaluate.
 function DeliveryController:onItemsChanged()
-    if (self.state == "ACTIVE") then
+    if (self.state == DS.ACTIVE) then
         self:checkReady();
     end
 end
@@ -375,7 +339,7 @@ function DeliveryController:onTradeCompleted()
     -- trade records the player NAME (TradeManager.partnerUnit set on
     -- TRADE_SHOW). Recording a name would leave the token unmarked and the
     -- controller would offer the same teammate again.
-    local partner = self.currentPartner or ACP.TradeManager.partnerUnit;
+    local partner = self.currentPartner or ACP.TradeManager:getPartner();
 
     if (partner and not partner:match("^party%d+$")) then
         partner = ACP.ArenaPrep:findPartyUnitByName(partner) or partner;
@@ -397,15 +361,15 @@ function DeliveryController:onTradeCompleted()
     -- the player was still confirming the trade manually). A completion after
     -- that must not resume trading.
     if (not ACP.ArenaPrep:isActive()) then
-        self:setState("IDLE");
+        self:setState(DS.IDLE);
         return;
     end
 
     if (self:findPartner()) then
-        self:setState("ACTIVE");
+        self:setState(DS.ACTIVE);
         self:checkReady();
     else
-        self:setState("DONE");
+        self:setState(DS.DONE);
     end
 end
 
@@ -414,7 +378,7 @@ end
 --- (e.g. the window was closed after the buff faded / gates opened) must not
 --- return the controller to ACTIVE and risk a trade after the gates open.
 function DeliveryController:onTradeFailed(reason)
-    if (self.state ~= "TRADING") then
+    if (self.state ~= DS.TRADING) then
         ACP:debugPrint("ignoring stray trade failure: %s (state: %s)", tostring(reason), self.state);
         return;
     end
@@ -422,7 +386,7 @@ function DeliveryController:onTradeFailed(reason)
     ACP:debugPrint("trade failed: %s (attempt %d/%d)", tostring(reason), self.retryCount + 1, ACP.Data.Constants.MAX_TRADE_RETRIES);
 
     self.currentPartner = nil;
-    self:setState("ACTIVE");
+    self:setState(DS.ACTIVE);
 
     self.retryCount = self.retryCount + 1;
 
@@ -434,7 +398,7 @@ function DeliveryController:onTradeFailed(reason)
     local backoff = ACP.Data.Constants.RETRY_BACKOFF[self.retryCount] or 8;
 
     ACP.Utils.Timers:after("TradeRetry", backoff, function()
-        if (self.state == "ACTIVE") then
+        if (self.state == DS.ACTIVE) then
             self:checkReady();
         end
     end);
@@ -450,16 +414,15 @@ end
 
 --- PLAYER_REGEN_ENABLED: combat over — retry if the buff is still active.
 function DeliveryController:onCombatEnd()
-    if (self.state == "ACTIVE" and ACP.ArenaPrep:isActive()) then
+    if (self.state == DS.ACTIVE and ACP.ArenaPrep:isActive()) then
         self:checkReady();
     end
 end
 
 function DeliveryController:_init()
-    if (self._initialized) then
+    if (not ACP.StateMachine:initOnce(self)) then
         return;
     end
-    self._initialized = true;
 
     ACP.Events:register("DC.BUFF_GAINED", "ACP_BUFF_GAINED", function()
         self:onBuffGained();
@@ -477,9 +440,12 @@ function DeliveryController:_init()
         self:onTradeCompleted();
     end);
 
-    -- The trade window opened → cancel the one-shot open timeout.
+    -- The trade window opened → cancel the one-shot open timeout and fill the
+    -- low-level placement queue (TradeManager is dependency-free — the
+    -- orchestrator builds the queue from Settings/Data/Inventory).
     ACP.Events:register("DC.TRADE_OPENED", "ACP_TRADE_OPENED", function()
         ACP.Utils.Timers:cancel("TradeOpen");
+        ACP.TradeManager:queueItems(ACP.TradePlanner:buildQueue());
     end);
 
     ACP.Events:register("DC.TRADE_FAILED", "ACP_TRADE_FAILED", function(reason)
@@ -497,7 +463,7 @@ function DeliveryController:_init()
     -- Party roster changes (e.g. converted to raid when the arena loads) —
     -- the bracket may resolve after the buff gain, so re-evaluate.
     ACP.Events:register("DC.GROUP_ROSTER_UPDATE", "GROUP_ROSTER_UPDATE", function()
-        if (self.state == "ACTIVE") then
+        if (self.state == DS.ACTIVE) then
             self:checkReady();
         end
     end);

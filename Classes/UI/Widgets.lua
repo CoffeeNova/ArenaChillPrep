@@ -63,12 +63,18 @@ local HEADER_R = 1;
 local HEADER_G = 0.82;
 local HEADER_B = 0;
 
---- Attach a GameTooltip tooltip to a widget via OnEnter/OnLeave.
+--- Attach a GameTooltip tooltip to a widget via OnEnter/OnLeave. FontStrings
+--- need EnableMouse(true) to receive OnEnter/OnLeave, so it is applied here
+--- (harmless for frames that already have it).
 ---@param widget table
 ---@param tooltipText string|nil
 local function attachTooltip(widget, tooltipText)
     if (not tooltipText) then
         return;
+    end
+
+    if (widget.EnableMouse) then
+        widget:EnableMouse(true);
     end
 
     widget:SetScript("OnEnter", function(self)
@@ -80,6 +86,24 @@ local function attachTooltip(widget, tooltipText)
     widget:SetScript("OnLeave", function()
         GameTooltip:Hide();
     end);
+end
+
+--- WoW binding keys are letters/digits OR punctuation characters (e.g. ";",
+--- "[", "/") reported by OnKeyDown as the literal key name, optionally
+--- prefixed by SHIFT-/CTRL-/ALT-, or named keys (F1, MOUSEWHEELUP, BUTTON3).
+--- Reject anything else: an invalid key would corrupt bindings-cache.wtf on
+--- save and kill ALL keybindings (Esc/Enter/movement/hotkeys) after /reload.
+--- NOTE: Lua patterns have no `|` alternation, so the modifier prefix is
+--- stripped with gsub (not a regex group) before the base check.
+---@param key string
+---@return boolean
+local function isSafeBindingKey(key)
+    if (type(key) ~= "string" or key == "") then
+        return false;
+    end
+
+    local base = key:gsub("SHIFT%-", ""):gsub("CTRL%-", ""):gsub("ALT%-", "");
+    return base:match("^[%w%p]+$") ~= nil;
 end
 
 --- Boxed container (dark bg + thin border).
@@ -416,7 +440,7 @@ end
 --- is never lost.
 ---@param parent Frame
 ---@param name string
----@param text string  placeholder when unbound
+---@param text string  placeholder when unbound (caller-passed L.* value)
 ---@param x number
 ---@param y number
 ---@param w number
@@ -424,7 +448,7 @@ end
 ---@param getter fun(): string|nil
 ---@param setter fun(value: string|nil)
 ---@param tooltipText string|nil
----@param captureText string|nil  text shown while capturing a key
+---@param captureText string  text shown while capturing a key (caller-passed L.* value)
 ---@return Button
 function UI.Keybind(parent, name, text, x, y, w, h, getter, setter, tooltipText, captureText)
     local button = CreateFrame("Button", name, parent, "UIPanelButtonTemplate");
@@ -453,29 +477,13 @@ function UI.Keybind(parent, name, text, x, y, w, h, getter, setter, tooltipText,
         RALT = true,
     };
 
-    -- WoW binding keys are letters/digits OR punctuation characters (e.g. ";",
-    -- "[", "/") reported by OnKeyDown as the literal key name, optionally
-    -- prefixed by SHIFT-/CTRL-/ALT-, or named keys (F1, MOUSEWHEELUP, BUTTON3).
-    -- Reject anything else: an invalid key would corrupt bindings-cache.wtf on
-    -- save and kill ALL keybindings (Esc/Enter/movement/hotkeys) after /reload.
-    -- NOTE: Lua patterns have no `|` alternation, so the modifier prefix is
-    -- stripped with gsub (not a regex group) before the base check.
-    local function isSafeBindingKey(key)
-        if (type(key) ~= "string" or key == "") then
-            return false;
-        end
-
-        local base = key:gsub("SHIFT%-", ""):gsub("CTRL%-", ""):gsub("ALT%-", "");
-        return base:match("^[%w%p]+$") ~= nil;
-    end
-
     local function refresh()
         local key = getter();
 
         if (button.waitingForKey) then
             -- Active capture state: gold text + highlighted frame so the
             -- player immediately sees that the next key is being captured.
-            button:SetText(captureText or "Press a key...");
+            button:SetText(captureText);
             button:SetNormalFontObject("GameFontHighlight");
             button:LockHighlight();
         elseif (key and key ~= "") then
@@ -483,7 +491,7 @@ function UI.Keybind(parent, name, text, x, y, w, h, getter, setter, tooltipText,
             button:SetNormalFontObject("GameFontHighlight");
             button:UnlockHighlight();
         else
-            button:SetText(text or "Click and press a key");
+            button:SetText(text);
             button:SetNormalFontObject("GameFontNormal");
             button:UnlockHighlight();
         end
@@ -552,7 +560,7 @@ function UI.Keybind(parent, name, text, x, y, w, h, getter, setter, tooltipText,
         end
 
         button:LockHighlight();
-        button:SetText(captureText or "Press a key...");
+        button:SetText(captureText);
     end
 
     -- Keyboard is captured exclusively by the focused EditBox. If focus is lost
@@ -639,6 +647,11 @@ function UI.ScrollFrame(parent, x, y, w, h)
 end
 
 ACP.UI = ACP.UI or {};
+
+-- Shared helpers re-exported for consumers (WorkflowUI reuses attachTooltip
+-- and the key whitelist instead of keeping its own copies).
+UI.attachTooltip = attachTooltip;
+UI.isSafeBindingKey = isSafeBindingKey;
 
 for key, value in pairs(UI) do
     ACP.UI[key] = value;

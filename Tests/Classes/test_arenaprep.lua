@@ -8,7 +8,6 @@ local H = dofile(_G.__TESTS_ROOT .. "/helpers.lua");
 
 local function resetArenaPrep()
     ArenaPrep.buffActive = false;
-    ArenaPrep.buffExpirationTime = nil;
     ArenaPrep.countdownEndTime = nil;
     ArenaPrep.bracket = nil;
     ACP.Utils.Timers.Handles = {};
@@ -19,10 +18,9 @@ function testScanBuffPrimary()
     -- Arrange
     _G.__stub.aura = { expirationTime = 100 };
     -- Act
-    local active, exp = ArenaPrep:scanBuff();
+    local active = ArenaPrep:scanBuff();
     -- Assert
     lu.assertIsTrue(active);
-    lu.assertEquals(exp, 100);
 end
 
 function testScanBuffAbsent()
@@ -32,25 +30,6 @@ function testScanBuffAbsent()
     local active = ArenaPrep:scanBuff();
     -- Assert
     lu.assertIsFalse(active);
-end
-
-function testScanBuffFallback()
-    -- Arrange: reload the module so it captures the nil primary lookup.
-    _G.C_UnitAuras.GetPlayerAuraBySpellID = nil;
-    _G.__stub.auraByIndex = { spellId = 32727, expirationTime = 50 };
-    local H = dofile(_G.__TESTS_ROOT .. "/helpers.lua");
-    H.reloadModule("Classes/ArenaPrep.lua");
-    local Reloaded = ACP.ArenaPrep;
-    -- Act
-    local active, exp = Reloaded:scanBuff();
-    -- Assert
-    lu.assertIsTrue(active);
-    lu.assertEquals(exp, 50);
-    -- Restore the primary lookup + reload again so the module is pristine.
-    _G.C_UnitAuras.GetPlayerAuraBySpellID = function() return _G.__stub.aura end;
-    H.reloadModule("Classes/ArenaPrep.lua");
-    -- Re-apply the runner's init so event registrations survive.
-    ACP.ArenaPrep:_init();
 end
 
 function testCheckNowGainFiresEvent()
@@ -124,17 +103,6 @@ function testGetRemainingTimeClamped()
     local remaining = ArenaPrep:getRemainingTime();
     -- Assert
     lu.assertEquals(remaining, 0);
-end
-
-function testGetRemainingTimeFromAura()
-    -- Arrange
-    resetArenaPrep();
-    _G.__stub.time = 100;
-    ArenaPrep.buffExpirationTime = 120;
-    -- Act
-    local remaining = ArenaPrep:getRemainingTime();
-    -- Assert
-    lu.assertEquals(remaining, 20);
 end
 
 function testGetRemainingTimeUnknown()
