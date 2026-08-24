@@ -1825,8 +1825,18 @@ function WorkflowEngine:_init()
     -- ACCEPTS a cast command (instant and cast-time spells alike) — i.e. the
     -- user pressed the hotkey. Branch by cast type: cast-time → waitingForCast
     -- + completion timeout; instant → GCD-driven completion (waitForGCD).
-    ACP.Events:register("WE.SPELLCAST_SENT", "UNIT_SPELLCAST_SENT", function(unit)
+    -- SPELL-ID GUARD (2026-08-22): the player's own MANUAL casts fire SENT too.
+    -- When the engine is waitingForKey (armed step ready), a manual cast's
+    -- SENT must NOT be treated as the workflow key being pressed — the engine
+    -- would then transition to waitingForCast, the manual cast's STOP would
+    -- trigger onCastComplete → advance → the workflow STEP IS SKIPPED without
+    -- ever being cast. Only accept SENT for the spell the engine armed.
+    ACP.Events:register("WE.SPELLCAST_SENT", "UNIT_SPELLCAST_SENT", function(unit, target, castGUID, spellID)
         if (unit ~= "player" or self.state ~= "RUNNING" or not (self.waitingForKey or self.waitingForCast)) then
+            return;
+        end
+
+        if (self.pendingCastSpellID and spellID and spellID ~= self.pendingCastSpellID) then
             return;
         end
 
@@ -1843,8 +1853,14 @@ function WorkflowEngine:_init()
     -- "key pressed, cast accepted" transition as SENT (SENT may be skipped by
     -- the client for some casts); completion is still driven by
     -- STOP/SUCCEEDED (see the research: START is a signal, not completion).
-    ACP.Events:register("WE.SPELLCAST_START", "UNIT_SPELLCAST_START", function(unit)
+    -- Same spell-ID guard as SENT — a manual cast's START must not arm the
+    -- engine or pet step.
+    ACP.Events:register("WE.SPELLCAST_START", "UNIT_SPELLCAST_START", function(unit, target, castGUID, spellID)
         if (unit ~= "player" or self.state ~= "RUNNING" or not (self.waitingForKey or self.waitingForCast)) then
+            return;
+        end
+
+        if (self.pendingCastSpellID and spellID and spellID ~= self.pendingCastSpellID) then
             return;
         end
 

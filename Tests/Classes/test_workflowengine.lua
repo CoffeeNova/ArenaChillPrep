@@ -927,6 +927,50 @@ function testRequestKeyCastSetsUnitAttribute()
     _G.__stub.bindingActions = nil;
 end
 
+-- Regression: the player's own manual cast fires UNIT_SPELLCAST_SENT too.
+-- When the engine is waitingForKey (armed step), a manual cast's SENT with a
+-- different spellID must NOT trigger onKeyPressed — the engine would then
+-- transition to waitingForCast, the manual cast's STOP would trigger
+-- onCastComplete → advance → the workflow STEP IS SKIPPED (live 2026-08-22).
+function testSentGuardIgnoresManualCastSpellID()
+    -- Arrange
+    local key = "F9";
+    _G.__stub.bindingKeys = { ["ACP_WORKFLOW1"] = key };
+    _G.__stub.bindingActions = { [key] = "ACP_WORKFLOW1" };
+    _G.__stub.dead = false;
+    _G.__stub.inCombat = false;
+    local savedCountdown = ACP.ArenaPrep.countdownEndTime;
+    ACP.ArenaPrep.countdownEndTime = nil;
+    Engine:_init();
+    applyFreshSlotBindings(key);
+    Engine.debugBypass = true;
+    Engine.currentSlot = 1;
+    Engine.stepIndex = 1;
+    Engine.state = "RUNNING";
+    Engine.pendingCastSpellID = 27230;
+    Engine.waitingForKey = true;
+    Engine.waitingForCast = false;
+
+    -- Act: the player manually casts Fel Armor (28189) — SENT fires with a
+    -- different spellID.
+    ACP.Events:fire("UNIT_SPELLCAST_SENT", "player", nil, nil, 28189);
+
+    -- Assert: the engine was NOT fooled — the step stays armed.
+    lu.assertEquals(Engine.waitingForKey, true);
+    lu.assertEquals(Engine.waitingForCast, false);
+
+    -- Cleanup
+    Engine.pendingCastSpellID = nil;
+    Engine.waitingForKey = false;
+    Engine.state = "IDLE";
+    Engine.currentSlot = nil;
+    Engine.slotKeys = {};
+    Engine.debugBypass = false;
+    ACP.ArenaPrep.countdownEndTime = savedCountdown;
+    _G.__stub.bindingKeys = nil;
+    _G.__stub.bindingActions = nil;
+end
+
 -- Regression: the client silently swallows a pet ability pressed EARLY in the
 -- player's cast (live 2026-08-22: Sacrifice at +2 s of a 6 s summon did
 -- nothing; the +5 s press fired). The engine must NOT mark the step done on
@@ -1070,6 +1114,50 @@ function testCheckGatesGateSafetySkipsInstantSteps()
     ACP.ArenaPrep.countdownEndTime = savedCountdown;
     _G.__stub.knownSpells = savedKnown;
     Engine.debugBypass = false;
+end
+
+-- Regression: the player's own manual cast fires UNIT_SPELLCAST_SENT too.
+-- When the engine is waitingForKey (armed step), a manual cast's SENT with a
+-- different spellID must NOT trigger onKeyPressed — the engine would then
+-- transition to waitingForCast, the manual cast's STOP would trigger
+-- onCastComplete → advance → the workflow STEP IS SKIPPED (live 2026-08-22).
+function testSentGuardIgnoresManualCastSpellID()
+    -- Arrange
+    local key = "F9";
+    _G.__stub.bindingKeys = { ["ACP_WORKFLOW1"] = key };
+    _G.__stub.bindingActions = { [key] = "ACP_WORKFLOW1" };
+    _G.__stub.dead = false;
+    _G.__stub.inCombat = false;
+    local savedCountdown = ACP.ArenaPrep.countdownEndTime;
+    ACP.ArenaPrep.countdownEndTime = nil;
+    Engine:_init();
+    applyFreshSlotBindings(key);
+    Engine.debugBypass = true;
+    Engine.currentSlot = 1;
+    Engine.stepIndex = 1;
+    Engine.state = "RUNNING";
+    Engine.pendingCastSpellID = 27230;
+    Engine.waitingForKey = true;
+    Engine.waitingForCast = false;
+
+    -- Act: the player manually casts Fel Armor (28189) — SENT fires with a
+    -- different spellID.
+    ACP.Events:fire("UNIT_SPELLCAST_SENT", "player", nil, nil, 28189);
+
+    -- Assert: the engine was NOT fooled — the step stays armed.
+    lu.assertEquals(Engine.waitingForKey, true);
+    lu.assertEquals(Engine.waitingForCast, false);
+
+    -- Cleanup
+    Engine.pendingCastSpellID = nil;
+    Engine.waitingForKey = false;
+    Engine.state = "IDLE";
+    Engine.currentSlot = nil;
+    Engine.slotKeys = {};
+    Engine.debugBypass = false;
+    ACP.ArenaPrep.countdownEndTime = savedCountdown;
+    _G.__stub.bindingKeys = nil;
+    _G.__stub.bindingActions = nil;
 end
 
 -- Regression: a step configured for a party member must not silently cast on
