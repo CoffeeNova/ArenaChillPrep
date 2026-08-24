@@ -248,7 +248,8 @@ subcategories (built with `Settings.RegisterCanvasLayoutSubcategory` — the leg
   engine is OFF it explains why and offers an "Enable workflow engine" CTA button — the tab
   does NOT gray out), a **Workflow defaults** block (`skipIfBuffedDefault` + short
   description; movement pause is always enforced and is not configurable), a **Workflow
-  editor** block (labeled `Workflow:` selector + `+ Add workflow`, `Name:` input + `Enabled`
+  editor** block (labeled `Workflow:` selector + `+ Add`/`Clone`/`Delete` buttons,
+  `Name:` input + `Enabled`
   checkbox, `Key:` keybind capture + `Clear` button with unbound/capturing/bound visual
   states), and a **Steps** table that fills the remaining panel height (table header +
   scrollable single-line rows: the spell cell is a **dropdown** — pick a different
@@ -267,8 +268,10 @@ subcategories (built with `Settings.RegisterCanvasLayoutSubcategory` — the leg
   (spellstones → `equipItem` steps) appear only for Warlocks, and stone-creating spells are
   listed per rank with the stone's name (`Create Master Healthstone`, `Create Major
   Healthstone`, …); every step uses the highest learned rank (no rank selection — the old
-  per-step rank dropdown was removed). Five slots exist by default; `+ Add workflow` adds slots up
-  to the bindable maximum. Slots 1-2 ship pre-defined with the user's m6 arena-prep
+  per-step rank dropdown was removed). Five slots exist by default; `+ Add` adds empty slots up
+  to the bindable maximum; `Clone` copies the selected workflow (name + steps deep-copied,
+  `enabled` kept; the key binding is NOT copied) into a new slot at the end and selects it — the
+  copied name gets a localized ` (copy)` suffix so the selector stays unambiguous. Slots 1-2 ship pre-defined with the user's m6 arena-prep
   macros as steps (slot 1 "2s full prep": Imp → HS → Spellstone → Felhunter → Soul Link →
   HS → Fel Armor → UB/DI x2 → equip Master Spellstone; slot 2 "Full prep (Voidwalker)":
   same without Soul Link, Voidwalker instead of Felhunter; duplicate Create Healthstone

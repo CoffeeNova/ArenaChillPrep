@@ -1,7 +1,7 @@
 -- ArenaChillPrep — Tests/Classes/test_workflowrepository.lua
 -- Covers Classes/WorkflowRepository.lua: the settings paths, workflowCount,
--- the CRUD operations (addWorkflow/deleteWorkflow/addStep/removeStep/
--- moveStep) and the step factory (buildStep) + findSpell.
+-- the CRUD operations (addWorkflow/deleteWorkflow/cloneWorkflow/addStep/
+-- removeStep/moveStep) and the step factory (buildStep) + findSpell.
 
 local ACP = _G.ACP;
 local Repo = ACP.WorkflowRepository;
@@ -191,6 +191,48 @@ function testMoveStepOutOfRange()
     resetSettings();
     lu.assertIsFalse(Repo:moveStep(1, 1, -1)); -- no step 0
     lu.assertIsFalse(Repo:moveStep(1, #Repo:getSteps(1), 1)); -- past the end
+end
+
+function testCloneWorkflow()
+    resetSettings();
+    ACP.Settings:set("workflows.definitions.1", {
+        enabled = true,
+        name = "2s full prep",
+        steps = { { type = "cast", spellID = 688, target = "player", skipIfBuffed = true } }
+    });
+    local slot = Repo:cloneWorkflow(1);
+    lu.assertEquals(slot, 6);
+    lu.assertEquals(ACP.Settings:get("workflows.slotCount"), 6);
+    local copy = ACP.Settings:get("workflows.definitions.6");
+    lu.assertEquals(copy.name, "2s full prep" .. ACP.L.workflow.copyNameSuffix);
+    lu.assertEquals(copy.enabled, true);
+    lu.assertEquals(#copy.steps, 1);
+    lu.assertEquals(copy.steps[1].spellID, 688);
+    lu.assertEquals(copy.steps[1].target, "player");
+    -- The clone is a DEEP copy: mutating it must not touch the source.
+    copy.steps[1].spellID = 999;
+    lu.assertEquals(ACP.Settings:get("workflows.definitions.1.steps.1.spellID"), 688);
+end
+
+function testCloneWorkflowEmptyName()
+    resetSettings();
+    ACP.Settings:set("workflows.definitions.2", { enabled = false, name = "", steps = {} });
+    local slot = Repo:cloneWorkflow(2);
+    lu.assertEquals(slot, 6);
+    lu.assertEquals(ACP.Settings:get("workflows.definitions.6.name"), "");
+end
+
+function testCloneWorkflowAtLimit()
+    resetSettings();
+    ACP.Settings:set("workflows.slotCount", ACP.Data.Constants.WORKFLOW_MAX_SLOTS);
+    lu.assertNil(Repo:cloneWorkflow(1));
+    lu.assertEquals(ACP.Settings:get("workflows.slotCount"), ACP.Data.Constants.WORKFLOW_MAX_SLOTS);
+end
+
+function testCloneWorkflowMissingSource()
+    resetSettings();
+    lu.assertNil(Repo:cloneWorkflow(99));
+    lu.assertEquals(ACP.Settings:get("workflows.slotCount"), ACP.Data.Constants.WORKFLOW_DEFAULT_SLOTS);
 end
 
 function testFindSpellFromCatalog()

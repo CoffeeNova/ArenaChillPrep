@@ -95,6 +95,39 @@ function WorkflowRepository:addWorkflow()
     return slot;
 end
 
+--- Clone a workflow slot into a NEW slot at the end. The definition (name,
+--- enabled flag, steps) is deep-copied so the copy never shares nested tables
+--- with the source; the key binding is NOT copied (a clone must be bound
+--- separately). A non-empty name gets a localized " (copy)" suffix so the
+--- selector stays unambiguous. Returns the new slot number, or nil when the
+--- slot limit is reached or the source definition is missing.
+---@param sourceSlot number
+---@return number|nil
+function WorkflowRepository:cloneWorkflow(sourceSlot)
+    local source = ACP.Settings:get(self:definitionPath(sourceSlot));
+
+    if (type(source) ~= "table") then
+        return nil;
+    end
+
+    local slot = self:addWorkflow();
+
+    if (not slot) then
+        return nil;
+    end
+
+    local copy = ACP.Utils.Tables:deepCopy(source);
+    local name = (type(copy.name) == "string") and copy.name or "";
+
+    if (name ~= "" and ACP.L and ACP.L.workflow) then
+        name = name .. ACP.L.workflow.copyNameSuffix;
+    end
+
+    copy.name = name;
+    ACP.Settings:set(self:definitionPath(slot), copy);
+    return slot;
+end
+
 --- Delete a workflow slot (data only — key bindings are migrated by
 --- WorkflowKeybindController:shiftBindingsAfterDelete). At the
 --- WORKFLOW_DEFAULT_SLOTS floor the definition is reset to empty instead of

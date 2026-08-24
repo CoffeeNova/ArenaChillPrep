@@ -6,7 +6,7 @@
 -- Layout (top -> bottom):
 --   status line        — engine state + slot state + step count
 --   workflow defaults  — skip-if-buffed default + description
---   workflow editor    — selector, add workflow, name, enabled, key bind
+--   workflow editor    — selector, add/clone/delete, name, enabled, key bind
 --   steps              — table header + scrollable step list filling the rest
 --
 -- Data operations (CRUD, step building, settings paths) live in
@@ -145,6 +145,31 @@ local function actionLayout()
     };
 
     return actionLayoutCache;
+end
+
+--- Measured widths of the workflow editor row-1 buttons (+ Add / Clone /
+--- Delete) so all three fit one row in both locales. Like actionLayout, the
+--- widths are derived from the localized labels (NOT hardcoded) and cached.
+local workflowButtonLayoutCache;
+
+local function workflowButtonLayout()
+    if (workflowButtonLayoutCache) then
+        return workflowButtonLayoutCache;
+    end
+
+    local L = ACP.L.workflow;
+    local addW = math_ceil(textWidth(L.addWorkflowLabel) + BUTTON_PAD * 2);
+    local cloneW = math_ceil(textWidth(L.cloneWorkflowLabel) + BUTTON_PAD * 2);
+    local delW = math_ceil(textWidth(L.deleteWorkflowLabel) + BUTTON_PAD * 2);
+
+    workflowButtonLayoutCache = {
+        addW = addW,
+        cloneW = cloneW,
+        delW = delW,
+        total = addW + ACTIONS_GAP + cloneW + ACTIONS_GAP + delW
+    };
+
+    return workflowButtonLayoutCache;
 end
 
 local function spellLabel(spellID, fallback)
@@ -395,6 +420,21 @@ end
 function WorkflowUI:addWorkflow()
     local C = ACP.Data.Constants;
     local slot = ACP.WorkflowRepository:addWorkflow();
+
+    if (not slot) then
+        ACP:print(ACP.L.workflow.slotLimit, C.WORKFLOW_MAX_SLOTS);
+        return;
+    end
+
+    self.SelectedSlot = slot;
+    self:refresh();
+end
+
+--- Clone the selected workflow into a NEW slot at the end (name + steps are
+--- copied; the key binding is not) and select the copy.
+function WorkflowUI:cloneWorkflow()
+    local C = ACP.Data.Constants;
+    local slot = ACP.WorkflowRepository:cloneWorkflow(self.SelectedSlot);
 
     if (not slot) then
         ACP:print(ACP.L.workflow.slotLimit, C.WORKFLOW_MAX_SLOTS);
@@ -758,7 +798,7 @@ function WorkflowUI:buildDefaults(content, x, y, width)
     return DEFAULTS_H;
 end
 
---- Workflow identity + activation block: selector + add workflow, name +
+--- Workflow identity + activation block: selector + add/clone/delete, name +
 --- enabled, key bind + clear. The key is presented in this one editable place.
 function WorkflowUI:buildEditor(content, x, y, width)
     local L = ACP.L.workflow;
@@ -767,7 +807,11 @@ function WorkflowUI:buildEditor(content, x, y, width)
 
     UI.Header(content, L.workflowEditorHeader, x, y);
 
-    -- Row 1: workflow selector + add workflow.
+    -- Row 1: workflow selector + add/clone/delete. The button widths are
+    -- measured from the localized labels so all three fit one row in both
+    -- locales. The row starts far enough right (FIELD_X + 240 — the original
+    -- "+ Add workflow" position) that the selector dropdown's RENDERED width
+    -- (wider than its 170 px nominal width) never overlaps the first button.
     local row1 = y - 22;
     local selectorLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal");
     selectorLabel:SetPoint("TOPLEFT", content, "TOPLEFT", x, row1 - 6);
@@ -785,12 +829,20 @@ function WorkflowUI:buildEditor(content, x, y, width)
             self:refresh();
         end, L.workflowSelectorTooltip);
 
-    Controls.addWorkflow = UI.Button(content, L.addWorkflowLabel, x + FIELD_X + 240, row1 - 4, 145, 24, function()
+    local buttons = workflowButtonLayout();
+    local btnX = x + FIELD_X + 240;
+
+    Controls.addWorkflow = UI.Button(content, L.addWorkflowLabel, btnX, row1 - 4, buttons.addW, 24, function()
         self:addWorkflow();
     end, L.workflowAddTooltip);
 
-    Controls.deleteWorkflow = UI.Button(content, L.deleteWorkflowLabel, x + FIELD_X + 240 + 145 + ACTIONS_GAP, row1 - 4,
-        145, 24, function()
+    Controls.cloneWorkflow = UI.Button(content, L.cloneWorkflowLabel, btnX + buttons.addW + ACTIONS_GAP, row1 - 4,
+        buttons.cloneW, 24, function()
+            self:cloneWorkflow();
+        end, L.cloneWorkflowTooltip);
+
+    Controls.deleteWorkflow = UI.Button(content, L.deleteWorkflowLabel,
+        btnX + buttons.addW + ACTIONS_GAP + buttons.cloneW + ACTIONS_GAP, row1 - 4, buttons.delW, 24, function()
             self:deleteWorkflow();
         end, L.deleteWorkflowTooltip);
 
