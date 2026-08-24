@@ -51,47 +51,52 @@ function testDefaultsWorkflowStepsValid()
     end
 end
 
--- Slot 1 mirrors the user's m6 macro: imp, healthstones, spellstone,
--- felhunter, soul link, buffs, equip Master Spellstone.
+-- Slot 1 is the user's battle-tested "2s with sacrifice" workflow.
 function testDefaultsWorkflow1Macro()
     -- Arrange
     -- Act
     local def = D.workflows.definitions[1];
     -- Assert
     lu.assertEquals(def.enabled, true);
-    lu.assertEquals(def.name, "2s full prep");
-    lu.assertEquals(#def.steps, 14);
+    lu.assertEquals(def.name, "2s with sacrifice");
+    lu.assertEquals(#def.steps, 19);
     lu.assertEquals(def.steps[1].type, "summon");
     lu.assertEquals(def.steps[1].spellID, 688);
     lu.assertEquals(def.steps[2].type, "createItem");
     lu.assertEquals(def.steps[2].spellID, 27230);
     lu.assertEquals(def.steps[2].itemID, 22105);
-    lu.assertEquals(def.steps[4].type, "createItem");
-    lu.assertEquals(def.steps[4].spellID, 28172);
-    lu.assertEquals(def.steps[4].itemID, 22646);
-    lu.assertEquals(def.steps[5].spellID, 691);
-    lu.assertEquals(def.steps[6].spellID, 19028);
-    lu.assertEquals(def.steps[6].skipIfBuffed, true);
-    lu.assertEquals(def.steps[9].spellID, 28189);
-    lu.assertEquals(def.steps[10].spellID, 5697);
-    lu.assertEquals(def.steps[11].spellID, 132);
-    lu.assertEquals(def.steps[14].type, "equipItem");
-    lu.assertEquals(def.steps[14].itemID, 22646);
-    lu.assertEquals(def.steps[14].itemName, "Master Spellstone");
+    lu.assertEquals(def.steps[4].type, "pet");
+    lu.assertEquals(def.steps[4].spellID, 27269);
+    lu.assertEquals(def.steps[4].target, "player");
+    lu.assertEquals(def.steps[7].type, "summon");
+    lu.assertEquals(def.steps[7].spellID, 697);
+    lu.assertEquals(def.steps[10].type, "equipItem");
+    lu.assertEquals(def.steps[10].itemID, 22646);
+    lu.assertEquals(def.steps[10].itemName, "Master Spellstone");
+    lu.assertEquals(def.steps[16].type, "summon");
+    lu.assertEquals(def.steps[16].spellID, 691);
+    lu.assertEquals(def.steps[17].type, "pet");
+    lu.assertEquals(def.steps[17].spellName, "Sacrifice");
+    lu.assertEquals(def.steps[17].spellID, 7812);
+    lu.assertEquals(def.steps[18].spellID, 19028);
+    lu.assertEquals(def.steps[18].skipIfBuffed, true);
+    lu.assertEquals(def.steps[19].spellID, 28610);
 end
 
--- Slot 2 is the same macro without Soul Link, with a Voidwalker.
+-- Slot 2 is the user's battle-tested "2s no sacrifice" workflow (ships enabled).
 function testDefaultsWorkflow2Macro()
     -- Arrange
     -- Act
     local def = D.workflows.definitions[2];
     -- Assert
-    lu.assertEquals(def.enabled, false);
-    lu.assertEquals(def.name, "Full prep (Voidwalker)");
-    lu.assertEquals(#def.steps, 13);
+    lu.assertEquals(def.enabled, true);
+    lu.assertEquals(def.name, "2s no sacrifice");
+    lu.assertEquals(#def.steps, 15);
     lu.assertEquals(def.steps[1].spellID, 688);
-    lu.assertEquals(def.steps[7].type, "summon");
-    lu.assertEquals(def.steps[7].spellID, 697);
-    lu.assertEquals(def.steps[13].type, "equipItem");
-    lu.assertEquals(def.steps[13].itemID, 22646);
+    lu.assertEquals(def.steps[1].skipIfBuffed, true);
+    lu.assertEquals(def.steps[6].type, "summon");
+    lu.assertEquals(def.steps[6].spellID, 691);
+    lu.assertEquals(def.steps[10].type, "equipItem");
+    lu.assertEquals(def.steps[10].itemID, 22646);
+    lu.assertEquals(def.steps[15].spellID, 28610);
 end

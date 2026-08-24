@@ -143,18 +143,18 @@ function testMigratePlaceholderDefinitions()
     Settings._initialized = false;
     -- Act
     Settings:_init();
-    -- Assert: both placeholders were replaced by the new m6-macro defaults.
+    -- Assert: both placeholders were replaced by the new default workflows.
     local def1 = Settings:get("workflows.definitions.1");
-    lu.assertEquals(def1.name, "2s full prep");
-    lu.assertEquals(#def1.steps, 14);
+    lu.assertEquals(def1.name, "2s with sacrifice");
+    lu.assertEquals(#def1.steps, 19);
     lu.assertEquals(def1.steps[1].type, "summon");
     lu.assertEquals(def1.steps[1].spellID, 688);
-    lu.assertEquals(def1.steps[14].type, "equipItem");
-    lu.assertEquals(def1.steps[14].itemID, 22646);
+    lu.assertEquals(def1.steps[17].spellName, "Sacrifice");
+    lu.assertEquals(def1.steps[19].spellID, 28610);
     local def2 = Settings:get("workflows.definitions.2");
-    lu.assertEquals(def2.name, "Full prep (Voidwalker)");
-    lu.assertEquals(#def2.steps, 13);
-    lu.assertEquals(def2.steps[7].spellID, 697);
+    lu.assertEquals(def2.name, "2s no sacrifice");
+    lu.assertEquals(#def2.steps, 15);
+    lu.assertEquals(def2.steps[6].spellID, 691);
     freshSettings();
 end
 

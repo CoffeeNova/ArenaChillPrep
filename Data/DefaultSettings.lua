@@ -29,180 +29,551 @@ ACP.Data.DefaultSettings = {
     },
     workflows = {
         enabled = true, -- Master workflow switch (General tab).
-        slotCount = 5, -- Five slots are visible initially; the UI can add more.
+        slotCount = 5, -- How many slots are visible initially; the UI can add more.
         skipIfBuffedDefault = true, -- Default skipIfBuffed for new buff steps.
         definitions = {
             -- Step schema: { type, spellID, spellName?, target?, skipIfBuffed?,
             -- itemID? } (+ { type="equipItem", itemID, itemName? }).
-            -- Runtime spellbook scanning stores the exact selected rank ID.
             --
-            -- Slots 1-2 are the user's m6 arena-prep macros translated into
-            -- steps (verified spell IDs: 27230 = Create Healthstone Rank 6 ->
-            -- Master Healthstone 22105; 28172 = Create Spellstone Rank 4 ->
-            -- Master Spellstone 22646; 28189 = Fel Armor Rank 2; 132 = Detect
-            -- Invisibility). "Create Healthstone(Rank 5)" macro entries are
-            -- stored as the max rank 27230/22105 to match the Master stone the
-            -- m6 macro creates (on TBC 2.5.5 the ranks coexist — the client
-            -- does NOT auto-upgrade old-rank casts). Duplicate createItem
-            -- steps complete instantly once the item is in bags (goal-met
-            -- fast path), so the macro's spam-duplicates need only one press.
+            -- Slots 1-5 are the five battle-tested Warlock arena-prep workflows
+            -- used and verified by the author (2s/3s/5s, with/without
+            -- Sacrifice). Every step stores the exact rank the client conjures
+            -- on TBC 2.5.5 (the ranks coexist — the client does NOT auto-upgrade
+            -- old-rank casts), so a step is "done" only when THAT rank's result
+            -- is present (Master Healthstone = 22105 via 27230, Master
+            -- Spellstone = 22646 via 28172, Fire Shield = 27269, etc.). All five
+            -- ship enabled; 1-2 are the 2v2 variants, 3-4 the 3v3 variants, 5 the
+            -- 5v5 variant.
             [1] = {
                 enabled = true,
-                name = "2s full prep",
-                steps = { -- /cast [nopet] Summon Imp (688).
-                {
-                    type = "summon",
-                    spellID = 688
-                }, -- /castsequence: Create Healthstone -> Master Healthstone (x2 entries).
-                {
-                    type = "createItem",
-                    spellID = 27230,
-                    itemID = 22105
-                }, {
-                    type = "createItem",
-                    spellID = 27230,
-                    itemID = 22105
-                }, -- Create Spellstone -> Master Spellstone.
-                {
-                    type = "createItem",
-                    spellID = 28172,
-                    itemID = 22646
-                }, -- Summon Felhunter.
-                {
-                    type = "summon",
-                    spellID = 691
-                }, -- Soul Link (talent rank 2, instant self-buff).
-                {
-                    type = "cast",
-                    spellID = 19028,
-                    target = "player",
-                    skipIfBuffed = true
-                }, -- Create Healthstone -> Master Healthstone (x2 entries; fast-pathed once in bags).
-                {
-                    type = "createItem",
-                    spellID = 27230,
-                    itemID = 22105
-                }, {
-                    type = "createItem",
-                    spellID = 27230,
-                    itemID = 22105
-                }, -- Fel Armor (rank 2).
-                {
-                    type = "cast",
-                    spellID = 28189,
-                    target = "player",
-                    skipIfBuffed = true
-                }, -- Unending Breath (x2 macro entries; second auto-skips when buffed).
-                {
-                    type = "cast",
-                    spellID = 5697,
-                    target = "player",
-                    skipIfBuffed = true
-                }, -- Detect Invisibility (x2 macro entries; second auto-skips when buffed).
-                {
-                    type = "cast",
-                    spellID = 132,
-                    target = "player",
-                    skipIfBuffed = true
-                }, {
-                    type = "cast",
-                    spellID = 5697,
-                    target = "player",
-                    skipIfBuffed = true
-                }, {
-                    type = "cast",
-                    spellID = 132,
-                    target = "player",
-                    skipIfBuffed = true
-                }, -- /equip Master Spellstone.
-                {
-                    type = "equipItem",
-                    itemID = 22646,
-                    itemName = "Master Spellstone"
-                }}
+                name = "2s with sacrifice",
+                steps = {
+                    {
+                        type = "summon",
+                        spellName = "Summon Imp",
+                        spellID = 688
+                    }, {
+                        type = "createItem",
+                        spellName = "Create Healthstone",
+                        itemID = 22105,
+                        spellID = 27230
+                    }, {
+                        type = "createItem",
+                        spellName = "Create Healthstone",
+                        itemID = 19012,
+                        spellID = 11730
+                    }, {
+                        type = "pet",
+                        target = "player",
+                        spellName = "Fire Shield",
+                        spellID = 27269
+                    }, {
+                        type = "pet",
+                        target = "party1",
+                        spellName = "Fire Shield",
+                        spellID = 27269
+                    }, {
+                        type = "createItem",
+                        spellName = "Create Spellstone",
+                        itemID = 22646,
+                        spellID = 28172
+                    }, {
+                        type = "summon",
+                        spellName = "Summon Voidwalker",
+                        spellID = 697
+                    }, {
+                        type = "createItem",
+                        spellName = "Create Healthstone",
+                        itemID = 22105,
+                        spellID = 27230
+                    }, {
+                        type = "createItem",
+                        spellName = "Create Healthstone",
+                        itemID = 19012,
+                        spellID = 11730
+                    }, {
+                        type = "equipItem",
+                        itemID = 22646,
+                        itemName = "Master Spellstone"
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Fel Armor",
+                        skipIfBuffed = true,
+                        spellID = 28189
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "cast",
+                        target = "party1",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "party1",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "summon",
+                        spellName = "Summon Felhunter",
+                        spellID = 691
+                    }, {
+                        type = "pet",
+                        spellName = "Sacrifice",
+                        spellID = 7812
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Soul Link",
+                        skipIfBuffed = true,
+                        spellID = 19028
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Shadow Ward",
+                        skipIfBuffed = true,
+                        spellID = 28610
+                    }
+                }
             },
             [2] = {
-                enabled = false,
-                name = "Full prep (Voidwalker)",
-                steps = { -- Same m6 flow without Soul Link; Voidwalker instead of Felhunter.
-                {
-                    type = "summon",
-                    spellID = 688
-                }, -- Create Healthstone -> Master Healthstone (x2 entries).
-                {
-                    type = "createItem",
-                    spellID = 27230,
-                    itemID = 22105
-                }, {
-                    type = "createItem",
-                    spellID = 27230,
-                    itemID = 22105
-                }, -- Create Spellstone -> Master Spellstone.
-                {
-                    type = "createItem",
-                    spellID = 28172,
-                    itemID = 22646
-                }, -- Create Healthstone -> Master Healthstone (x2 entries).
-                {
-                    type = "createItem",
-                    spellID = 27230,
-                    itemID = 22105
-                }, {
-                    type = "createItem",
-                    spellID = 27230,
-                    itemID = 22105
-                }, -- Summon Voidwalker.
-                {
-                    type = "summon",
-                    spellID = 697
-                }, -- Fel Armor (rank 2).
-                {
-                    type = "cast",
-                    spellID = 28189,
-                    target = "player",
-                    skipIfBuffed = true
-                }, -- Unending Breath + Detect Invisibility (x2 macro entries each).
-                {
-                    type = "cast",
-                    spellID = 5697,
-                    target = "player",
-                    skipIfBuffed = true
-                }, {
-                    type = "cast",
-                    spellID = 132,
-                    target = "player",
-                    skipIfBuffed = true
-                }, {
-                    type = "cast",
-                    spellID = 5697,
-                    target = "player",
-                    skipIfBuffed = true
-                }, {
-                    type = "cast",
-                    spellID = 132,
-                    target = "player",
-                    skipIfBuffed = true
-                }, -- /equip Master Spellstone.
-                {
-                    type = "equipItem",
-                    itemID = 22646,
-                    itemName = "Master Spellstone"
-                }}
+                enabled = true,
+                name = "2s no sacrifice",
+                steps = {
+                    {
+                        type = "summon",
+                        spellName = "Summon Imp",
+                        skipIfBuffed = true,
+                        spellID = 688
+                    }, {
+                        type = "createItem",
+                        spellName = "Create Healthstone",
+                        itemID = 22105,
+                        skipIfBuffed = true,
+                        spellID = 27230
+                    }, {
+                        type = "createItem",
+                        spellName = "Create Healthstone",
+                        itemID = 19012,
+                        skipIfBuffed = true,
+                        spellID = 11730
+                    }, {
+                        type = "pet",
+                        target = "player",
+                        spellName = "Fire Shield",
+                        spellID = 27269
+                    }, {
+                        type = "pet",
+                        target = "party1",
+                        spellName = "Fire Shield",
+                        spellID = 27269
+                    }, {
+                        type = "summon",
+                        spellName = "Summon Felhunter",
+                        skipIfBuffed = true,
+                        spellID = 691
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Soul Link",
+                        skipIfBuffed = true,
+                        spellID = 19028
+                    }, {
+                        type = "createItem",
+                        spellName = "Create Spellstone",
+                        itemID = 22646,
+                        skipIfBuffed = true,
+                        spellID = 28172
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Fel Armor",
+                        skipIfBuffed = true,
+                        spellID = 28189
+                    }, {
+                        type = "equipItem",
+                        itemID = 22646,
+                        itemName = "Master Spellstone"
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "cast",
+                        target = "party1",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "party1",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Shadow Ward",
+                        skipIfBuffed = true,
+                        spellID = 28610
+                    }
+                }
             },
             [3] = {
-                enabled = false,
-                name = "",
-                steps = {}
+                enabled = true,
+                name = "3s with sacrifice",
+                steps = {
+                    {
+                        type = "summon",
+                        spellName = "Summon Imp",
+                        skipIfBuffed = true,
+                        spellID = 688
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Ritual of Souls",
+                        spellID = 29893
+                    }, {
+                        type = "pet",
+                        target = "player",
+                        spellName = "Fire Shield",
+                        spellID = 27269
+                    }, {
+                        type = "pet",
+                        target = "party1",
+                        spellName = "Fire Shield",
+                        spellID = 27269
+                    }, {
+                        type = "pet",
+                        target = "party2",
+                        spellName = "Fire Shield",
+                        spellID = 27269
+                    }, {
+                        type = "summon",
+                        spellName = "Summon Voidwalker",
+                        skipIfBuffed = true,
+                        spellID = 697
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Fel Armor",
+                        skipIfBuffed = true,
+                        spellID = 28189
+                    }, {
+                        type = "createItem",
+                        spellName = "Create Spellstone",
+                        itemID = 22646,
+                        skipIfBuffed = true,
+                        spellID = 28172
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "equipItem",
+                        itemID = 22646,
+                        itemName = "Master Spellstone"
+                    }, {
+                        type = "cast",
+                        target = "party1",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "party1",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "cast",
+                        target = "party2",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "party2",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "summon",
+                        spellName = "Summon Felhunter",
+                        skipIfBuffed = true,
+                        spellID = 691
+                    }, {
+                        type = "pet",
+                        spellName = "Sacrifice",
+                        spellID = 7812
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Soul Link",
+                        skipIfBuffed = true,
+                        spellID = 19028
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Shadow Ward",
+                        skipIfBuffed = true,
+                        spellID = 28610
+                    }
+                }
             },
             [4] = {
-                enabled = false,
-                name = "",
-                steps = {}
+                enabled = true,
+                name = "3s no sacrifice",
+                steps = {
+                    {
+                        type = "summon",
+                        spellName = "Summon Imp",
+                        skipIfBuffed = true,
+                        spellID = 688
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Ritual of Souls",
+                        spellID = 29893
+                    }, {
+                        type = "pet",
+                        target = "player",
+                        spellName = "Fire Shield",
+                        spellID = 27269
+                    }, {
+                        type = "pet",
+                        target = "party1",
+                        spellName = "Fire Shield",
+                        spellID = 27269
+                    }, {
+                        type = "pet",
+                        target = "party2",
+                        spellName = "Fire Shield",
+                        spellID = 27269
+                    }, {
+                        type = "summon",
+                        spellName = "Summon Felhunter",
+                        skipIfBuffed = true,
+                        spellID = 691
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Soul Link",
+                        skipIfBuffed = true,
+                        spellID = 19028
+                    }, {
+                        type = "createItem",
+                        spellName = "Create Spellstone",
+                        itemID = 22646,
+                        skipIfBuffed = true,
+                        spellID = 28172
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Fel Armor",
+                        skipIfBuffed = true,
+                        spellID = 28189
+                    }, {
+                        type = "equipItem",
+                        itemID = 22646,
+                        itemName = "Master Spellstone"
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "cast",
+                        target = "party1",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "party1",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "cast",
+                        target = "party2",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "party2",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Shadow Ward",
+                        skipIfBuffed = true,
+                        spellID = 28610
+                    }
+                }
             },
             [5] = {
-                enabled = false,
-                name = "",
-                steps = {}
+                enabled = true,
+                name = "5s no sacrifice",
+                steps = {
+                    {
+                        type = "summon",
+                        spellName = "Summon Imp",
+                        skipIfBuffed = true,
+                        spellID = 688
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Ritual of Souls",
+                        spellID = 29893
+                    }, {
+                        type = "pet",
+                        target = "player",
+                        spellName = "Fire Shield",
+                        spellID = 27269
+                    }, {
+                        type = "pet",
+                        target = "party1",
+                        spellName = "Fire Shield",
+                        spellID = 27269
+                    }, {
+                        type = "pet",
+                        target = "party2",
+                        spellName = "Fire Shield",
+                        spellID = 27269
+                    }, {
+                        type = "summon",
+                        spellName = "Summon Felhunter",
+                        skipIfBuffed = true,
+                        spellID = 691
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Soul Link",
+                        skipIfBuffed = true,
+                        spellID = 19028
+                    }, {
+                        type = "createItem",
+                        spellName = "Create Spellstone",
+                        itemID = 22646,
+                        skipIfBuffed = true,
+                        spellID = 28172
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Fel Armor",
+                        skipIfBuffed = true,
+                        spellID = 28189
+                    }, {
+                        type = "equipItem",
+                        itemID = 22646,
+                        itemName = "Master Spellstone"
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "cast",
+                        target = "party1",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "party1",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "cast",
+                        target = "party2",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "party2",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "cast",
+                        target = "party3",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "party3",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "cast",
+                        target = "party4",
+                        spellName = "Detect Invisibility",
+                        skipIfBuffed = true,
+                        spellID = 132
+                    }, {
+                        type = "cast",
+                        target = "party4",
+                        spellName = "Unending Breath",
+                        skipIfBuffed = true,
+                        spellID = 5697
+                    }, {
+                        type = "cast",
+                        target = "player",
+                        spellName = "Shadow Ward",
+                        skipIfBuffed = true,
+                        spellID = 28610
+                    }
+                }
             }
         }
     }

@@ -271,12 +271,15 @@ subcategories (built with `Settings.RegisterCanvasLayoutSubcategory` — the leg
   per-step rank dropdown was removed). Five slots exist by default; `+ Add` adds empty slots up
   to the bindable maximum; `Clone` copies the selected workflow (name + steps deep-copied,
   `enabled` kept; the key binding is NOT copied) into a new slot at the end and selects it — the
-  copied name gets a localized ` (copy)` suffix so the selector stays unambiguous. Slots 1-2 ship pre-defined with the user's m6 arena-prep
-  macros as steps (slot 1 "2s full prep": Imp → HS → Spellstone → Felhunter → Soul Link →
-  HS → Fel Armor → UB/DI x2 → equip Master Spellstone; slot 2 "Full prep (Voidwalker)":
-  same without Soul Link, Voidwalker instead of Felhunter; duplicate Create Healthstone
-  macro entries are stored as 27230/22105 (the max rank), and they complete instantly once
-  the Master stone is in bags. On TBC 2.5.5 the stone ranks COEXIST (a Warlock can create
+  copied name gets a localized ` (copy)` suffix so the selector stays unambiguous. Slots 1-5
+  ship pre-defined with the author's five battle-tested Warlock arena-prep workflows (all
+  enabled): slot 1 "2s with sacrifice" (Imp → HS×2 → Fire Shield player/party1 → Spellstone →
+  Voidwalker → HS×2 → equip Master Spellstone → Fel Armor/DI/UB → Felhunter → Sacrifice →
+  Soul Link → Shadow Ward), slot 2 "2s no sacrifice" (same without Sacrifice/Voidwalker),
+  slot 3 "3s with sacrifice" (+ Ritual of Souls + party2 Fire Shield), slot 4 "3s no
+  sacrifice", slot 5 "5s no sacrifice" (+ party3/party4 DI/UB). Duplicate Create Healthstone
+  entries are stored as 27230/22105 (the max rank) and 11730/19012, and they complete
+  instantly once the Master stone is in bags. On TBC 2.5.5 the stone ranks COEXIST (a Warlock can create
   each rank; the client does NOT auto-upgrade a rank-5 cast), so a step stores its exact
   rank and is "done" only when THAT rank's stone is present). Healthstone ranks 1-5 exist
   as historical ID PAIRS (e.g. Major = 19012/19013 — see `Data/Items.lua`); the client
@@ -326,5 +329,6 @@ only renders slots up to the current character's `slotCount`.
 The workflows branch merges **per-slot replace** (a saved `definitions[N]` wins wholesale —
 deepMerge would index-merge the steps arrays into hybrids), `ensureDefaults` is array-aware,
 and saved definitions that still match the OLD placeholder defaults exactly are replaced by
-the new m6-macro defaults on load (user edits are never touched).
+the current default workflows (slots 1-5, the author's five battle-tested Warlock prep
+workflows) on load (user edits are never touched).
 `Utils/Tables` provides `deepCopy`/`deepMerge`/`shallowCopy`.
