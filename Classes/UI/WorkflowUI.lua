@@ -723,8 +723,21 @@ function WorkflowUI:buildEditor(content, x, y, width)
     nameLabel:SetText(L.nameLabel .. ":");
     nameLabel:SetTextColor(0.7, 0.7, 0.7, 1);
 
-    local getName, setName = bindPath(definitionPath(self.SelectedSlot) .. ".name");
-    local getEnabled, setEnabled = bindPath(definitionPath(self.SelectedSlot) .. ".enabled");
+    -- Resolve the path at CALL time: the selector can change SelectedSlot
+    -- after this block is built, so build-time bindPath closures would stay
+    -- stuck on slot 1 (name typed into any slot always wrote to workflow 1).
+    local function getName()
+        return ACP.Settings:get(definitionPath(self.SelectedSlot) .. ".name");
+    end
+    local function setName(value)
+        setSetting(definitionPath(self.SelectedSlot) .. ".name", value);
+    end
+    local function getEnabled()
+        return ACP.Settings:get(definitionPath(self.SelectedSlot) .. ".enabled");
+    end
+    local function setEnabled(value)
+        setSetting(definitionPath(self.SelectedSlot) .. ".enabled", value);
+    end
 
     Controls.workflowName = UI.TextInput(content, "ACPWorkflowNameInput", x + FIELD_X, row2 - 2, 240, 20,
         getName, setName, L.nameTooltip);
