@@ -204,13 +204,19 @@ function WorkflowItemSteps:equipItem(engine, step)
 
     local key = engine:resolveCastKey(engine.currentSlot);
 
-    if (key) then
-        ACP:debugPrint(ACP.L.workflow.pressEquip, key, itemName);
-        ACP:debugPrint("workflow equip: %s (step %d) waiting for key %s", itemName, engine.stepIndex, key);
-    else
+    if (not key) then
+        if (engine.debugBypass) then
+            ACP:print(ACP.L.workflow.testNoKey, engine.currentSlot);
+        end
         engine.waitingForEquip = false;
         engine:pause(Reason.NoHotkey);
         return;
+    end
+
+    if (engine.debugBypass) then
+        ACP:print(ACP.L.workflow.pressEquip, key, itemName);
+    else
+        ACP:debugPrint(ACP.L.workflow.pressEquip, key, itemName);
     end
 
     ACP.Utils.Timers:interval("WorkflowItemPoll", 0.25, function()

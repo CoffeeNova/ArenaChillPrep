@@ -138,6 +138,17 @@ local WorkflowEngine = {
     --- gate). Set via /acp workflowtest to test casts outside an arena.
     ---@type boolean
     debugBypass = false,
+
+    --- True while a /acp workflowtest (or the Workflows-tab Test button) run is
+    --- active — drives the "Stop testing" toggle on the Test button.
+    ---@type boolean
+    isTesting = false,
+
+    --- The slot currently being test-run (set by startTest). Lets the Test
+    --- button distinguish "stop the running test" from "switch the test to a
+    --- different slot".
+    ---@type number|nil
+    testSlot = nil,
 };
 
 ---@type WorkflowEngine
@@ -643,10 +654,27 @@ function WorkflowEngine:executeCurrentStep()
 
     -- Out of steps → DONE.
     if (not step) then
+        local wasTesting = self.isTesting;
+
         self:cancelTimers();
         self:clearKeyCast();
         self:setState(WS.DONE);
+
+        -- A test run that finished naturally ends the test mode: clear the
+        -- flags so the Test button reverts to "Test" (via ACP_WORKFLOW_DONE)
+        -- and normal key presses require arena prep again (no leaked bypass).
+        if (wasTesting) then
+            self.isTesting = false;
+            self.testSlot = nil;
+            self.debugBypass = false;
+        end
+
         ACP:debugPrint(ACP.L.workflow.done, self.currentSlot, self:definitionName());
+
+        if (wasTesting) then
+            ACP:print(ACP.L.workflow.done, self.currentSlot, self:definitionName());
+        end
+
         ACP.Events:fire("ACP_WORKFLOW_DONE");
         return;
     end
@@ -733,6 +761,7 @@ function WorkflowEngine:reset()
     self:setState(WS.IDLE);
     self.currentSlot = nil;
     self.stepIndex = 1;
+    self.isTesting = false;
     self:clearTransientState(true);
     self:clearKeyCast();
     ACP:debugPrint("workflow reset");
@@ -753,6 +782,17 @@ function WorkflowEngine:start(slot)
 
     if (self.state == WS.RUNNING and self.currentSlot == slot) then
         return; -- already running
+    end
+
+    -- TEST-MODE SLOT LOCK (2026-08-24): while a /acp workflowtest run is active
+    -- ONLY the tested slot's key may start/resume the engine. Without this, a
+    -- key press of a DIFFERENT workflow's slot calls start() for that slot,
+    -- which (debugBypass true) passes the arena gate, resets the running test
+    -- and hijacks it — pressing ";" (slot 1) while testing slot 2 with F5
+    -- silently switched the run to slot 1. Any other slot's key is a no-op.
+    if (self.debugBypass and self.testSlot and slot ~= self.testSlot) then
+        ACP:debugPrint("workflow test: ignoring start for slot %d (testing slot %d)", slot, self.testSlot);
+        return;
     end
 
     -- One run per prep/test command (2026-08-22): after DONE the key press is
@@ -817,6 +857,44 @@ function WorkflowEngine:start(slot)
     self:executeCurrentStep();
 end
 
+--- Start a workflow slot OUTSIDE an arena (mirrors the `/acp workflowtest`
+--- slash command): bypasses the prep requirement, resets the engine first so
+--- each call starts a fresh run, and prints a visible chat message. The actual
+--- casts still need a hardware event (the bound key) — this only fires the run.
+---@param slot number
+function WorkflowEngine:startTest(slot)
+    slot = slot or 1;
+    self.debugBypass = true;
+    self.testSlot = nil;
+    self:reset();
+    self:start(slot);
+
+    if (self.state == WS.RUNNING and self.currentSlot == slot) then
+        self.isTesting = true;
+        self.testSlot = slot;
+        local definition = self:getDefinition(slot);
+        local name = type(definition) == "table" and definition.name or "";
+        ACP:print(ACP.L.workflow.started, slot, name);
+    else
+        -- The test did not start (engine disabled, empty workflow, ...) — do
+        -- not leave the bypass behind: a leaked debugBypass would let normal
+        -- workflow key presses start runs outside an arena.
+        self.debugBypass = false;
+    end
+end
+
+--- Stop a running /acp workflowtest run (the Test button "Stop testing"
+--- state): clear the bypass + test flag and reset the engine to IDLE. A fresh
+--- test starts cleanly on the next press.
+function WorkflowEngine:stopTest()
+    local slot = self.testSlot or self.currentSlot;
+    self.isTesting = false;
+    self.testSlot = nil;
+    self.debugBypass = false;
+    self:reset();
+    ACP:print(ACP.L.workflow.testStopped, slot or 0);
+end
+
 --- Status summary for /acp status.
 ---@return string
 function WorkflowEngine:getStatus()
@@ -840,7 +918,13 @@ function WorkflowEngine:_init()
     ACP.WorkflowItemSteps:_init(self);
 
     ACP.Events:register("WE.BUFF_LOST", "ACP_BUFF_LOST", function()
-        self:reset();
+        -- A /acp workflowtest run ignores the arena buff entirely (debugBypass),
+        -- so don't tear it down when the prep buff is lost — only reset for real
+        -- arena sessions. Without this guard the reset clears `isTesting` and the
+        -- Test button's "Stop testing" toggle breaks (it restarts instead).
+        if (not self.isTesting) then
+            self:reset();
+        end
     end);
 
     -- Combat makes casting impossible (protected API) → pause; the user

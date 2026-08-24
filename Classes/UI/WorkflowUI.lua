@@ -519,6 +519,30 @@ function WorkflowUI:scrollToBottom()
     end
 end
 
+--- Reflect the workflow test state on the Test button: while a test is running
+--- it reads "Stop testing" and grows only in length (width) to fit the text;
+--- otherwise it is the normal "Test" size. Height never changes.
+function WorkflowUI:updateTestButton()
+    local btn = self.Controls.testWorkflow;
+
+    if (not btn) then
+        return;
+    end
+
+    local WE = ACP.WorkflowEngine;
+    local testing = WE and WE.isTesting or false;
+    local baseW = self._testBaseW or 160;
+
+    if (testing) then
+        local w = math_max(textWidth(ACP.L.workflow.testWorkflowStopLabel) + BUTTON_PAD * 2, baseW);
+        btn:SetText(ACP.L.workflow.testWorkflowStopLabel);
+        btn:SetSize(w, 24);
+    else
+        btn:SetText(ACP.L.workflow.testWorkflowLabel);
+        btn:SetSize(baseW, 24);
+    end
+end
+
 --- Keep the step list filling the available panel height below the steps
 --- table header. Re-evaluated on every refresh so the list adapts to the
 --- current content size.
@@ -825,6 +849,12 @@ function WorkflowUI:buildEditor(content, x, y, width)
             if (Controls.keybind) then
                 Controls.keybind.StopCapture();
             end
+            -- Switching to a DIFFERENT workflow while a test is running stops
+            -- the test (engine reset + visible stop message); the Test button
+            -- is reverted by updateTestButton in the refresh below.
+            if (value ~= self.SelectedSlot and ACP.WorkflowEngine and ACP.WorkflowEngine.isTesting) then
+                ACP.WorkflowEngine:stopTest();
+            end
             self.SelectedSlot = value;
             self:refresh();
         end, L.workflowSelectorTooltip);
@@ -845,6 +875,32 @@ function WorkflowUI:buildEditor(content, x, y, width)
         btnX + buttons.addW + ACTIONS_GAP + buttons.cloneW + ACTIONS_GAP, row1 - 4, buttons.delW, 24, function()
             self:deleteWorkflow();
         end, L.deleteWorkflowTooltip);
+
+    -- Test: run the selected workflow OUTSIDE an arena (mirrors /acp
+    -- workflowtest — bypasses the prep requirement; the engine is reset first
+    -- so each press starts a fresh run). Same row + size as the other buttons;
+    -- while a test runs it toggles to a larger "Stop testing" button.
+    local testX = btnX + buttons.addW + ACTIONS_GAP + buttons.cloneW + ACTIONS_GAP + buttons.delW + ACTIONS_GAP;
+    self._testBaseW = buttons.addW;
+    Controls.testWorkflow = UI.Button(content, L.testWorkflowLabel, testX, row1 - 4, buttons.addW, 24, function()
+        local WE = ACP.WorkflowEngine;
+        if (not WE) then
+            return;
+        end
+        if (WE.isTesting) then
+            if (WE.testSlot == self.SelectedSlot) then
+                -- Same slot running: stop the test.
+                WE:stopTest();
+            else
+                -- Different slot running: cancel it and start the new one
+                -- (startTest resets the engine first, so the old test ends).
+                WE:startTest(self.SelectedSlot);
+            end
+        else
+            WE:startTest(self.SelectedSlot);
+        end
+        self:updateTestButton();
+    end, L.testWorkflowTooltip);
 
     -- Row 2: name + enabled.
     local row2 = row1 - 36;
@@ -975,6 +1031,19 @@ function WorkflowUI:build(content, w, h)
         end);
     end
 
+    -- Keep the Test button in sync with the engine: when a test run ends
+    -- (natural completion) or the engine is reset, revert the button to its
+    -- initial "Test" state. updateTestButton is a no-op until the editor is
+    -- built.
+    if (not self._testStateListener) then
+        self._testStateListener = true;
+        local function syncTestButton()
+            self:updateTestButton();
+        end
+        ACP.Events:register("WorkflowUI.WORKFLOW_DONE", "ACP_WORKFLOW_DONE", syncTestButton);
+        ACP.Events:register("WorkflowUI.WORKFLOW_RESET", "ACP_WORKFLOW_RESET", syncTestButton);
+    end
+
     self.content = content;
     self.contentWidth = w;
     self.contentHeight = h;
@@ -1026,6 +1095,7 @@ function WorkflowUI:refresh()
     self:updateStepScroll();
     self:renderSteps();
     self:refreshStatus();
+    self:updateTestButton();
 end
 
 function WorkflowUI:refreshStatus()

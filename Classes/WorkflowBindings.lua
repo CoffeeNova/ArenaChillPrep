@@ -216,14 +216,27 @@ function WorkflowBindings:currentButton(engine)
     return engine.currentSlot and engine.castButtons[engine.currentSlot] or nil;
 end
 
---- Apply `attr = value` to EVERY live cast button — the /acp bind hotkey
---- button and the current slot's button — so BOTH keys cast the armed step.
+--- Apply `attr = value` to the live cast buttons. The /acp bind hotkey button
+--- always receives it, and so does the CURRENT slot's button (the one whose key
+--- is armed for this run). Every OTHER slot button is first reset to the inert
+--- value, so a spell/macro never lingers on a button whose run has ended —
+--- without this, the slot key would keep re-casting the last step's spell after
+--- the workflow is stopped/reset (the engine nulls currentSlot before clearing,
+--- so a per-slot button would otherwise keep its armed attribute).
 ---@param engine WorkflowEngine
 ---@param attr string
 ---@param value any
 function WorkflowBindings:setCastAttribute(engine, attr, value)
     if (engine.castButton and engine.castButton.SetAttribute) then
         engine.castButton:SetAttribute(attr, value);
+    end
+
+    -- Wipe the attribute from every slot button first (guarantees only the
+    -- current slot's button ends up armed), then arm the current one.
+    for _, btn in pairs(engine.castButtons) do
+        if (btn and btn.SetAttribute) then
+            btn:SetAttribute(attr, "");
+        end
     end
 
     local btn = self:currentButton(engine);

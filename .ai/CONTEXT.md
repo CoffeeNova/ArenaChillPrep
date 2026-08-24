@@ -262,8 +262,10 @@ subcategories (built with `Settings.RegisterCanvasLayoutSubcategory` — the leg
   description; movement pause is always enforced and is not configurable), a **Workflow
   editor** block (labeled `Workflow:` selector + `+ Add`/`Clone`/`Delete` buttons,
   `Name:` input + `Enabled`
-  checkbox, `Key:` keybind capture + `Clear` button with unbound/capturing/bound visual
-  states), and a **Steps** table that fills the remaining panel height (table header +
+  checkbox, `Key:`   keybind capture + `Clear` button with unbound/capturing/bound visual
+  states),   a **Test** button (mirrors `/acp workflowtest` — runs the
+  selected workflow outside an arena by setting `WorkflowEngine.debugBypass`,
+  resetting and starting the slot), and a **Steps** table that fills the remaining panel height (table header +
   scrollable single-line rows: the spell cell is a **dropdown** — pick a different
   spell/item from the same catalog as "+ Add step" to REPLACE the step in place (the row
   keeps its position; the new step is rebuilt by the factory and gets its own defaults;

@@ -99,12 +99,23 @@ function WorkflowCastController:requestKeyCast(engine, name, step)
 
     local key = engine:resolveCastKey(engine.currentSlot);
 
-    if (key) then
-        ACP:debugPrint(ACP.L.workflow.pressKey, key, name);
-        ACP:debugPrint("workflow keycast: %s (step %d) waiting for key %s", name, engine.stepIndex, key);
-    else
+    if (not key) then
+        -- No key can cast this step. Outside a test the workflow just waits
+        -- quietly; in test mode surface it so the player knows to bind a key.
+        if (engine.debugBypass) then
+            ACP:print(ACP.L.workflow.testNoKey, engine.currentSlot);
+        end
         engine.waitingForKey = false;
         engine:pause(Reason.NoHotkey);
+        return;
+    end
+
+    if (engine.debugBypass) then
+        -- Test mode: the "Press <key> to cast <spell>" prompt is the whole
+        -- point of the test driver, so show it in chat (not just debug).
+        ACP:print(ACP.L.workflow.pressKey, key, name);
+    else
+        ACP:debugPrint(ACP.L.workflow.pressKey, key, name);
     end
 end
 

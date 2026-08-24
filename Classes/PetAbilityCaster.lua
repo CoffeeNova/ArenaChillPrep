@@ -145,14 +145,20 @@ function PetAbilityCaster:petAbility(engine, step)
 
     local key = engine:resolveCastKey(engine.currentSlot);
 
-    if (key) then
-        ACP:debugPrint(ACP.L.workflow.pressKey, key, name);
-        ACP:debugPrint("workflow pet ability: %s (step %d) waiting for key %s", name, engine.stepIndex, key);
-    else
+    if (not key) then
+        if (engine.debugBypass) then
+            ACP:print(ACP.L.workflow.testNoKey, engine.currentSlot);
+        end
         engine.waitingForPet = false;
         engine.waitingForKey = false;
         engine:pause(Reason.NoHotkey);
         return;
+    end
+
+    if (engine.debugBypass) then
+        ACP:print(ACP.L.workflow.pressKey, key, name);
+    else
+        ACP:debugPrint(ACP.L.workflow.pressKey, key, name);
     end
 end
 

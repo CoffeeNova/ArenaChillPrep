@@ -206,13 +206,12 @@ local function handleCommand(input)
         -- requirement in start() and the notArena gate). Diagnostic only.
         -- Each command starts ONE fresh run: the engine is reset first, so
         -- re-issuing the command re-runs the workflow from step 1 (a plain
-        -- key press after DONE does NOT restart — 2026-08-22).
+        -- key press after DONE does NOT restart — 2026-08-22). Prints a
+        -- visible chat message so the player knows the test started.
         local slot = tonumber((input or ""):match("^%s*%S+%s+(%S+)") or "1") or 1;
 
         if (ACP.WorkflowEngine) then
-            ACP.WorkflowEngine.debugBypass = true;
-            ACP.WorkflowEngine:reset();
-            ACP.WorkflowEngine:start(slot);
+            ACP.WorkflowEngine:startTest(slot);
         end
     elseif (command == "bind") then
         -- /acp bind <key> — set/change the workflow hotkey (SetBindingClick
