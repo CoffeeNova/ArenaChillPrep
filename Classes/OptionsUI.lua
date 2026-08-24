@@ -42,6 +42,52 @@ local OptionsUI = {
 ---@type OptionsUI
 ACP.OptionsUI = OptionsUI;
 
+--- True when the addon fully supports the player's class (Warlock only).
+---@return boolean
+function OptionsUI:isSupportedClass()
+    local _, englishClass = UnitClass("player");
+    return englishClass == "WARLOCK";
+end
+
+--- The incompatibility message shown in the panel and printed to chat for
+--- non-Warlock players (with a friendly "reroll to Warlock" joke). Rogues get
+--- a special demon-flavored dismissal (pure Warcraft lore, not personal).
+---@return string
+function OptionsUI:getCompatibilityMessage()
+    local L = ACP.L;
+    local className, englishClass = UnitClass("player");
+
+    if (englishClass == "ROGUE") then
+        return L.compatMessageRogue;
+    end
+
+    return (L.compatMessage):format(className or "Adventurer");
+end
+
+--- Build the single "Compatibility" page shown to unsupported classes: a
+--- centered message explaining the addon is Warlock-only and inviting a reroll.
+---@param content Frame
+---@param w number
+---@param h number
+function OptionsUI:buildCompatibility(content, w, h)
+    local L = ACP.L;
+    local UI = ACP.UI;
+    local PADDING = UI.PADDING;
+
+    local title = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge");
+    title:SetPoint("TOP", content, "TOP", 0, -40);
+    title:SetText(L.compatSection);
+
+    local fs = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightLarge");
+    fs:SetPoint("TOP", title, "BOTTOM", 0, -24);
+    fs:SetPoint("LEFT", content, "LEFT", PADDING, 0);
+    fs:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0);
+    fs:SetJustifyH("CENTER");
+    fs:SetJustifyV("TOP");
+    fs:SetNonSpaceWrap(true);
+    fs:SetText(self:getCompatibilityMessage());
+end
+
 --- Enabled if ANY itemID of this rank is checked (in Settings).
 ---@param settingsKey string  singular category key ("healthstone")
 ---@param rank number
@@ -372,30 +418,43 @@ function OptionsUI:buildPanel()
     self.Panel = panel;
     panel:SetSize(UI.PANEL_WIDTH, UI.PANEL_HEIGHT);
 
-    -- Subcategories (extensible: Profiles/Abilities later).
-    self.Subcategories = {
-        {
-            key = "General",
-            title = L.generalSection,
-            build = function(_, content, w, h)
-                self:buildGeneral(content, w, h);
-            end,
-        },
-        {
-            key = "Workflows",
-            title = L.workflow.section,
-            build = function(_, content, w, h)
-                self:buildWorkflows(content, w, h);
-            end,
-        },
-        {
-            key = "Autotrade",
-            title = L.autotradeSection,
-            build = function(_, content, w, h)
-                self:buildAutotrade(content, w, h);
-            end,
-        },
-    };
+    -- Subcategories (extensible: Profiles/Abilities later). Unsupported
+    -- classes (anything but Warlock) get a single compatibility page.
+    if (self:isSupportedClass()) then
+        self.Subcategories = {
+            {
+                key = "General",
+                title = L.generalSection,
+                build = function(_, content, w, h)
+                    self:buildGeneral(content, w, h);
+                end,
+            },
+            {
+                key = "Workflows",
+                title = L.workflow.section,
+                build = function(_, content, w, h)
+                    self:buildWorkflows(content, w, h);
+                end,
+            },
+            {
+                key = "Autotrade",
+                title = L.autotradeSection,
+                build = function(_, content, w, h)
+                    self:buildAutotrade(content, w, h);
+                end,
+            },
+        };
+    else
+        self.Subcategories = {
+            {
+                key = "Compatibility",
+                title = L.compatSection,
+                build = function(_, content, w, h)
+                    self:buildCompatibility(content, w, h);
+                end,
+            },
+        };
+    end
 
     if (Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory
         and Settings.RegisterCanvasLayoutSubcategory) then
@@ -613,6 +672,18 @@ function OptionsUI:_init()
     SLASH_ACP2 = "/arenachillprep";
     SlashCmdList["ACP"] = function(input)
         local command = strlower((input or ""):match("^%s*(%S*)") or "");
+
+        if (not self:isSupportedClass()) then
+            -- Bare /acp still opens the (compatibility) panel; every other
+            -- sub-command just prints the incompatibility message to chat.
+            if (command == "") then
+                self:openPanel();
+                return;
+            end
+
+            ACP:print(self:getCompatibilityMessage());
+            return;
+        end
 
         if (command == "") then
             -- /acp with no args opens the settings panel.

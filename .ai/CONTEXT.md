@@ -231,6 +231,18 @@ Gargul (same workspace) already implements exactly this flow — opening a trade
 | `/acp status` | Show current state (buff active, **bracket**, items found, partner) |
 | `/acp debug` | Toggle verbose logging |
 
+**Class gating (Warlock only).** The addon fully works for Warlocks only. For
+any other class the `/acp` settings panel renders a **single** "Compatibility"
+page (no General/Workflows/Autotrade subcategories) that explains the addon is
+Warlock-only and invites the player to reroll. Every sub-command
+(`/acp status`, `enable`, `disable`, `debug`, …) — i.e. anything but bare
+`/acp` — prints the same incompatibility message to chat instead of running.
+Gating lives in `Classes/OptionsUI.lua` (`isSupportedClass`,
+`getCompatibilityMessage`, `buildCompatibility`) and the `SlashCmdList["ACP"]`
+handler; the strings are `L.compatSection` / `L.compatMessage`. Rogues get a
+special demon-flavored line (`L.compatMessageRogue`): "Reroll to Warlock, you
+insignificant wretch!" (pure Warcraft lore — demons talk like that).
+
 ---
 
 ## Settings (v0.1)
