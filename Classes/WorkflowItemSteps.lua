@@ -20,6 +20,11 @@ local WorkflowItemSteps = {};
 ---@type WorkflowItemSteps
 ACP.WorkflowItemSteps = WorkflowItemSteps;
 
+---@return table|nil
+local function activeRankTable()
+    return ACP.Data.Workflows and ACP.Data.Workflows:activeRankTable();
+end
+
 --- createItem never skips on an already-present stone: the prep workflow
 --- conjures several to trade, so completion is a delta (a NEW stone of the
 --- expected rank appears).
@@ -40,13 +45,14 @@ function WorkflowItemSteps:createItem(engine, step)
     engine:requestKeyCast(name, step);
 end
 
---- Item IDs accepted for the UNLEARNED-rank fallback: every same-family stone
+--- Item IDs accepted for the UNLEARNED-rank fallback: every same-family item
 --- of rank >= the step's rank (variants expanded), else the single itemID.
 ---@param spellID number
 ---@param itemID number
 ---@return table
 function WorkflowItemSteps:resolveExpectedItems(spellID, itemID)
-    local rankEntry = ACP.Data.Workflows.stoneRanks[spellID];
+    local rankTable = activeRankTable();
+    local rankEntry = rankTable and rankTable[spellID];
 
     if (not rankEntry) then
         return { itemID };
@@ -54,7 +60,7 @@ function WorkflowItemSteps:resolveExpectedItems(spellID, itemID)
 
     local ids = {};
 
-    for _, r in pairs(ACP.Data.Workflows.stoneRanks) do
+    for _, r in pairs(rankTable) do
         if (r.spellName == rankEntry.spellName and r.rank >= rankEntry.rank) then
             local variants = r.itemIDs or { r.itemID };
 
@@ -73,8 +79,8 @@ end
 ---@param castItemID number
 ---@return table
 function WorkflowItemSteps:expandExpectedItems(castSpellID, castItemID)
-    local rank = ACP.Data.Workflows and ACP.Data.Workflows.stoneRanks
-        and ACP.Data.Workflows.stoneRanks[castSpellID];
+    local rankTable = activeRankTable();
+    local rank = rankTable and rankTable[castSpellID];
 
     if (rank and rank.itemIDs) then
         return rank.itemIDs;
@@ -112,6 +118,10 @@ end
 --- Whether a createItem step's product is already in bags. A castable stored
 --- rank expects exactly its own rank's variants (a leftover higher-rank stone
 --- must not satisfy it); the family-widened set is only for the upgraded cast.
+--- When the resolved spell is a tracked autotrade item (its rank entry maps to
+--- an enabled `items.<key>` setting with a count), the goal is the COUNT
+--- TARGET — repeated Conjure steps conjure until `count` is met. Otherwise any
+--- variant present satisfies the step.
 ---@param engine WorkflowEngine
 ---@param step table
 ---@return boolean
@@ -121,6 +131,24 @@ function WorkflowItemSteps:isItemAlreadyPresent(engine, step)
     local ids = (castSpellID ~= step.spellID)
         and self:resolveExpectedItems(castSpellID, castItemID)
         or self:expandExpectedItems(castSpellID, castItemID);
+
+    local rankTable = activeRankTable();
+    local rankEntry = rankTable and rankTable[castSpellID];
+
+    if (rankEntry and rankEntry.category and ACP.Data.Items.settingsKeyFor) then
+        local settingsKey = ACP.Data.Items:settingsKeyFor(rankEntry.category);
+        local setting = ACP.Settings:get("items." .. settingsKey);
+
+        if (setting and setting.enabled and type(setting.count) == "number") then
+            local total = 0;
+
+            for _, id in ipairs(ids) do
+                total = total + ACP.Inventory:countItem(id);
+            end
+
+            return total >= setting.count;
+        end
+    end
 
     for _, id in ipairs(ids) do
         if (ACP.Inventory:countItem(id) > 0) then

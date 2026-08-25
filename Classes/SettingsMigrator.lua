@@ -117,10 +117,13 @@ local function deepEqual(a, b)
 end
 
 ---@param workflows table
----@param defaults table
+---@param defaults table|nil  defaults table with `.definitions`; defaults to
+---                            the Warlock class defaults (the placeholders
+---                            are a Warlock-era snapshot)
 function SettingsMigrator:migratePlaceholderDefinitions(workflows, defaults)
     local definitions = workflows and workflows.definitions;
-    local newDefinitions = defaults and defaults.definitions;
+    local newDefinitions = (defaults and defaults.definitions)
+        or ((ACP.Data.classWorkflows(ACP.Data.Constants.CLASS_WARLOCK) or {}).defaultDefinitions);
 
     if (type(definitions) ~= "table" or type(newDefinitions) ~= "table") then
         return;
@@ -133,6 +136,39 @@ function SettingsMigrator:migratePlaceholderDefinitions(workflows, defaults)
             and deepEqual(definition.steps, placeholder.steps)) then
             definitions[slot] = newDefinitions[slot];
         end
+    end
+end
+
+--- Fill empty workflow slots with the ACTIVE class's default definitions
+--- (deep-copied so user edits never touch the class data). No-op when the
+--- class is unknown (ADDON_LOADED) or definitions already exist.
+---@param workflows table
+---@param englishClass string|nil
+function SettingsMigrator:applyClassDefaults(workflows, englishClass)
+    if (type(workflows) ~= "table") then
+        return;
+    end
+
+    local data = ACP.Data.classWorkflows and ACP.Data.classWorkflows(englishClass);
+    local classDefaults = data and data.defaultDefinitions;
+
+    if (not classDefaults) then
+        return;
+    end
+
+    local definitions = workflows.definitions;
+
+    if (type(definitions) ~= "table") then
+        workflows.definitions = {};
+        definitions = workflows.definitions;
+    end
+
+    if (next(definitions) ~= nil) then
+        return;
+    end
+
+    for slot, definition in pairs(classDefaults) do
+        definitions[slot] = ACP.Utils.Tables:deepCopy(definition);
     end
 end
 

@@ -67,13 +67,25 @@ local function rankResultItem(spellName, rank)
 end
 
 ---@param spellName string
+---@param spellID number|nil
 ---@return table|nil entry
 ---@return string|nil category
-local function staticMetadata(spellName)
-    local spells = ACP.Data.Workflows and ACP.Data.Workflows.spells;
+local function staticMetadata(spellName, spellID)
+    local data = ACP.Data.activeClassWorkflows();
+    local spells = data and data.spells;
 
     if (not spells) then
         return nil;
+    end
+
+    -- Exact spellID first — same-name rank entries (Amplify Magic 1008/33946)
+    -- each carry their own metadata.
+    for category, list in pairs(spells) do
+        for _, entry in ipairs(list) do
+            if (entry.spellID == spellID) then
+                return entry, category;
+            end
+        end
     end
 
     for category, list in pairs(spells) do
@@ -112,9 +124,16 @@ function CatalogBuilder:addEntry(spellbook, spellID, spellName, rankText, icon, 
         return;
     end
 
-    local metadata, category = staticMetadata(spellName);
+    local metadata, category = staticMetadata(spellName, spellID);
     category = category or "other";
     local rank = rankNumber(rankText);
+
+    -- Buffs with explicit ranks (Amplify/Dampen Magic) carry the rank in the
+    -- metadata so the Add Step menu can list each rank separately.
+    if (rank == 0 and metadata and metadata.rank) then
+        rank = metadata.rank;
+    end
+
     local resultItemID = rankResultItem(spellName, rank) or (metadata and metadata.itemID);
 
     local entry = {
@@ -134,9 +153,9 @@ function CatalogBuilder:addEntry(spellbook, spellID, spellName, rankText, icon, 
     spellbook.entriesByID[spellID] = entry;
 
     -- Stones group by FAMILY so getHighestKnownRank can match all ranks.
-    local groupKey = (ACP.Data.Workflows and ACP.Data.Workflows.stoneRanks
-        and ACP.Data.Workflows.stoneRanks[spellID]
-        and ACP.Data.Workflows.stoneRanks[spellID].spellName) or spellName;
+    local rankTable = ACP.Data.Workflows and ACP.Data.Workflows:activeRankTable();
+    local groupKey = (rankTable and rankTable[spellID]
+        and rankTable[spellID].spellName) or spellName;
 
     local group = spellbook.groupsByName[groupKey];
     if (not group) then

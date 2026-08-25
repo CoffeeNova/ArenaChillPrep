@@ -7,11 +7,19 @@ local _, ACP = ...;
 
 -- Not a global on TBC FrameXML (retail-only constant).
 local CLASS_WARLOCK = ACP.Data.Constants.CLASS_WARLOCK;
+local CLASS_MAGE = ACP.Data.Constants.CLASS_MAGE;
+local CLASS_PRIEST = ACP.Data.Constants.CLASS_PRIEST;
+local CLASS_PALADIN = ACP.Data.Constants.CLASS_PALADIN;
+local CLASS_DRUID = ACP.Data.Constants.CLASS_DRUID;
+local CLASS_HUNTER = ACP.Data.Constants.CLASS_HUNTER;
+local CLASS_SHAMAN = ACP.Data.Constants.CLASS_SHAMAN;
+local CLASS_ROGUE = ACP.Data.Constants.CLASS_ROGUE;
+local CLASS_WARRIOR = ACP.Data.Constants.CLASS_WARRIOR;
 
 ACP.Data = ACP.Data or {};
 
 ---@class Items
-ACP.Data.Items = {
+local Items = {
     healthstones = {
         -- Minor (lvl 10)
         [19004] = { id = 19004, rank = 1, name = "Minor Healthstone" },
@@ -41,9 +49,59 @@ ACP.Data.Items = {
         [22103] = { id = 22103, rank = 5, name = "Major Soulstone" },
     },
 
+    -- Mage conjured items (one ID per rank; conjured at 10 per cast).
+    food = {
+        [22019] = { id = 22019, rank = 8, name = "Conjured Croissant" },
+    },
+    water = {
+        [22018] = { id = 22018, rank = 9, name = "Conjured Glacier Water" },
+    },
+
     classItems = {
         [CLASS_WARLOCK] = { "healthstones" },
+        [CLASS_MAGE] = { "food", "water" },
+    },
+
+    -- Mage conjured categories per PARTNER class (autotrade filter): mana
+    -- users take food AND water, Rogues/Warriors take food only. Unlisted
+    -- partner classes receive everything. Warlock healthstones are
+    -- unaffected — this table only filters the MAGE's categories.
+    magePartnerCategories = {
+        [CLASS_PRIEST] = { "food", "water" },
+        [CLASS_PALADIN] = { "food", "water" },
+        [CLASS_WARLOCK] = { "food", "water" },
+        [CLASS_DRUID] = { "food", "water" },
+        [CLASS_HUNTER] = { "food", "water" },
+        [CLASS_SHAMAN] = { "food", "water" },
+        [CLASS_ROGUE] = { "food" },
+        [CLASS_WARRIOR] = { "food" },
+    },
+
+    -- Explicit plural → singular mapping. The generic `sub(1, -2)` trick
+    -- breaks for non-plural keys ("food" → "foo").
+    settingsKeyByCategory = {
+        healthstones = "healthstone",
+        food = "food",
+        water = "water",
+    },
+
+    -- Per-category "how many items to await before trading" slider ranges.
+    -- Categories without an entry have no count slider (fixed count).
+    countRanges = {
+        food = { min = 10, max = 60, step = 10 },
+        water = { min = 10, max = 60, step = 10 },
     },
 };
+
+---@type Items
+ACP.Data.Items = Items;
+
+--- Settings key (singular) for a plural catalog key. Falls back to the old
+--- trailing-"s" strip for unknown categories.
+---@param category string
+---@return string
+function Items:settingsKeyFor(category)
+    return Items.settingsKeyByCategory[category] or category:sub(1, -2);
+end
 
 return ACP;

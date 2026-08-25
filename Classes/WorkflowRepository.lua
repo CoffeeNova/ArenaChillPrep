@@ -165,7 +165,8 @@ function WorkflowRepository:findSpell(spellID)
         end
     end
 
-    local spells = ACP.Data.Workflows and ACP.Data.Workflows.spells;
+    local data = ACP.Data.activeClassWorkflows and ACP.Data.activeClassWorkflows();
+    local spells = data and data.spells;
 
     if (not spells) then
         return nil;

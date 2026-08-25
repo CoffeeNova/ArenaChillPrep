@@ -42,11 +42,13 @@ local OptionsUI = {
 ---@type OptionsUI
 ACP.OptionsUI = OptionsUI;
 
---- True when the addon fully supports the player's class (Warlock only).
+--- True when the addon fully supports the player's class (Warlock or Mage).
 ---@return boolean
 function OptionsUI:isSupportedClass()
+    local C = ACP.Data.Constants;
     local _, englishClass = UnitClass("player");
-    return englishClass == "WARLOCK";
+
+    return englishClass == C.CLASS_WARLOCK or englishClass == C.CLASS_MAGE;
 end
 
 --- The incompatibility message shown in the panel and printed to chat for
@@ -236,11 +238,15 @@ local function handleCommand(input)
     end
 end
 
---- Build the rank checkbox rows for the given category inside `box`.
+--- Build the rank checkbox rows for the given category inside `box`,
+--- starting at `startY` (negative offset from the box top). Returns the next
+--- free offset so multiple categories stack without overlapping.
 ---@param box Frame
 ---@param settingsKey string  singular ("healthstone")
 ---@param category string     plural catalog key ("healthstones")
-function OptionsUI:buildRankRows(box, settingsKey, category)
+---@param startY number
+---@return number nextY
+function OptionsUI:buildRankRows(box, settingsKey, category, startY)
     local L = ACP.L;
     local UI = ACP.UI;
     local catalog = ACP.Data.Items[category] or {};
@@ -265,13 +271,15 @@ function OptionsUI:buildRankRows(box, settingsKey, category)
 
     table.sort(sorted);
 
+    local y = startY;
+
     for i, rank in ipairs(sorted) do
         local ids = rankGroups[rank];
         local name = "ACPRankCheck" .. settingsKey .. rank;
         local rankName = self.rankToName[settingsKey][rank];
 
         local check = UI.Checkbox(box, name, rankName,
-            UI.BOX_INSET, -8 - (i - 1) * UI.ROW_HEIGHT,
+            UI.BOX_INSET, y,
             function() return self:rankIsEnabled(settingsKey, rank); end,
             function(checked)
                 for _, id in ipairs(ids) do
@@ -282,7 +290,10 @@ function OptionsUI:buildRankRows(box, settingsKey, category)
 
         local entry = { check = check, label = check.label, settingsKey = settingsKey, rank = rank };
         self.rankEntries[#self.rankEntries + 1] = entry;
+        y = y - UI.ROW_HEIGHT;
     end
+
+    return y;
 end
 
 --- Build the "General" subcategory: master switch, workflow engine switch,
@@ -397,7 +408,7 @@ function OptionsUI:buildAutotrade(content, w, h)
         function(value) setSetting("noTradeSameClass", value); end,
         L.noTradeSameClassTooltip);
 
-    -- ---- RIGHT COLUMN: ranks ----
+    -- ---- RIGHT COLUMN: ranks + count sliders ----
     local rightX = leftX + colW + UI.GAP;
     local rightY = -4;
 
@@ -410,13 +421,59 @@ function OptionsUI:buildAutotrade(content, w, h)
     local categories = classItems[englishClass] or {};
     self.rankEntries = {};
 
-    -- 6 rank rows + comfortable top/bottom padding (no inner category label
-    -- for a single category — it collided with the first row).
-    local ranksBox = UI.Box(content, rightX, rightY, colW, 6 * UI.ROW_HEIGHT + 24);
+    -- Box height: one row per catalog rank + one count slider per category
+    -- with a countRanges entry (Mage food/water; Warlock healthstone has a
+    -- fixed count and no slider).
+    local rankRowCount = 0;
+    local sliderCategories = {};
 
     for _, category in ipairs(categories) do
-        local settingsKey = category:sub(1, -2);
-        self:buildRankRows(ranksBox, settingsKey, category);
+        local catalog = ACP.Data.Items[category] or {};
+        local ranks = {};
+
+        for _, record in pairs(catalog) do
+            ranks[record.rank] = true;
+        end
+
+        local count = 0;
+        for _ in pairs(ranks) do
+            count = count + 1;
+        end
+        rankRowCount = rankRowCount + count;
+
+        if (ACP.Data.Items.countRanges[category]) then
+            tinsert(sliderCategories, category);
+        end
+    end
+
+    local sliderCount = #sliderCategories;
+    local ranksBoxH = rankRowCount * UI.ROW_HEIGHT + (sliderCount > 0 and (12 + sliderCount * 56) or 0) + 24;
+    local ranksBox = UI.Box(content, rightX, rightY, colW, ranksBoxH);
+
+    local rowY = -8;
+
+    for _, category in ipairs(categories) do
+        local settingsKey = ACP.Data.Items:settingsKeyFor(category);
+        rowY = self:buildRankRows(ranksBox, settingsKey, category, rowY);
+    end
+
+    self.Controls.countSliders = {};
+
+    if (sliderCount > 0) then
+        rowY = rowY - 12;
+
+        for _, category in ipairs(sliderCategories) do
+            local settingsKey = ACP.Data.Items:settingsKeyFor(category);
+            local range = ACP.Data.Items.countRanges[category];
+            local slider = UI.Slider(ranksBox, "ACP" .. settingsKey .. "CountSlider",
+                L[settingsKey .. "CountLabel"], 16, rowY, range.min, range.max, range.step,
+                function() return ACP.Settings:get("items." .. settingsKey .. ".count"); end,
+                function(value) setSetting("items." .. settingsKey .. ".count", value); end,
+                L[settingsKey .. "CountTooltip"]);
+
+            tinsert(self.Controls.countSliders, slider);
+            rowY = rowY - 56;
+        end
     end
 
     -- Apply the master-switch state (and the permanent 3v3/5v5 lock) now.
@@ -607,6 +664,27 @@ function OptionsUI:setAutotradeEnabled(flag)
         end
     end
 
+    -- Count sliders (Mage food/water).
+    for _, slider in ipairs(Controls.countSliders or {}) do
+        if (slider) then
+            if (flag) then
+                slider:Enable();
+                slider:SetAlpha(1);
+
+                if (slider.label) then
+                    slider.label:SetAlpha(1);
+                end
+            else
+                slider:Disable();
+                slider:SetAlpha(alpha);
+
+                if (slider.label) then
+                    slider.label:SetAlpha(alpha);
+                end
+            end
+        end
+    end
+
     -- "Do not trade to <own class>" checkbox follows the master switch.
     if (Controls.noTradeSameClass) then
         if (flag) then
@@ -653,6 +731,12 @@ function OptionsUI:refresh()
 
     if (Controls.tradeRetries) then
         Controls.tradeRetries.Refresh();
+    end
+
+    for _, slider in ipairs(Controls.countSliders or {}) do
+        if (slider) then
+            slider.Refresh();
+        end
     end
 
     if (Controls.noTradeSameClass) then

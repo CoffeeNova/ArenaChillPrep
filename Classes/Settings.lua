@@ -6,6 +6,7 @@
 local _, ACP = ...;
 
 local pairs = _G.pairs;
+local select = _G.select;
 local tinsert = _G.tinsert;
 
 ---@class Settings
@@ -48,7 +49,8 @@ function Settings:_init()
     local savedWorkflows = characterDB.workflows or legacyWorkflows or {};
 
     -- Replace untouched placeholders BEFORE the merge (on the saved tree).
-    ACP.SettingsMigrator:migratePlaceholderDefinitions(savedWorkflows, workflowDefaults);
+    -- The replacement is the Warlock class defaults (Warlock-era snapshot).
+    ACP.SettingsMigrator:migratePlaceholderDefinitions(savedWorkflows);
 
     -- Per-slot REPLACE merge: a saved definition wins wholesale (deepMerge
     -- would index-merge the steps arrays into hybrids).
@@ -79,6 +81,16 @@ function Settings:_init()
     end
 
     ACP.SettingsMigrator:normalizeRankKeys(self.Data.items);
+
+    -- The class is unknown at ADDON_LOADED; PLAYER_LOGIN re-runs this once
+    -- UnitClass is available (fresh characters have empty definitions).
+    ACP.SettingsMigrator:applyClassDefaults(self.WorkflowData, select(2, UnitClass("player")));
+
+    if (ACP.Events) then
+        ACP.Events:register("Settings.PLAYER_LOGIN", "PLAYER_LOGIN", function()
+            ACP.SettingsMigrator:applyClassDefaults(self.WorkflowData, select(2, UnitClass("player")));
+        end);
+    end
 
     self:persist();
 end
@@ -163,6 +175,7 @@ function Settings:reset()
     self.Data = defaults;
     self.WorkflowData.pauseOnMove = nil;
     ACP.SettingsMigrator:migrateWorkflowNames(self.WorkflowData);
+    ACP.SettingsMigrator:applyClassDefaults(self.WorkflowData, select(2, UnitClass("player")));
     self:persist();
 
     ACP.Events:fire("ACP_SETTINGS_RESET");

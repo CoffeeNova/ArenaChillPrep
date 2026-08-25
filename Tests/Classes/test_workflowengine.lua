@@ -63,6 +63,21 @@ function testResolveCastInfoUpgradesUnlearnedLowerRank()
     lu.assertEquals(castItemID, 22105);
 end
 
+function testResolveCastInfoUpgradesWithoutRuntimeCatalog()
+    -- The low-rank family upgrade must never depend on the runtime catalog
+    -- (which is empty before PLAYER_LOGIN and can be disturbed by any
+    -- rebuild change): the STATIC rank table resolves the family.
+    _G.__stub.knownSpells = { [27230] = true };
+    Spellbook:_reset();
+
+    local castSpellID, castItemID = Engine:resolveCastInfo({ spellID = 11730, itemID = 19012 });
+
+    lu.assertEquals(castSpellID, 27230);
+    lu.assertEquals(castItemID, 22105);
+    _G.__stub.knownSpells = {};
+    resetSpellbook();
+end
+
 function testResolveCastInfoKeepsKnownRank()
     -- Arrange: step stored rank 6 (27230/22105); player knows it.
     _G.__stub.knownSpells = { [27230] = true };
@@ -139,6 +154,7 @@ end
 -- Regression: resolveCastInfo must be a TOP-LEVEL method available immediately
 function testResolveCastInfoAvailableImmediatelyAfterLoad()
     -- Arrange: fresh engine module (pristine table, no side effects).
+    local origEngine = ACP.WorkflowEngine;
     H.reloadModule("Classes/WorkflowEngine.lua");
     local fresh = ACP.WorkflowEngine;
 
@@ -149,6 +165,10 @@ function testResolveCastInfoAvailableImmediatelyAfterLoad()
     -- exact case that crashed on the nested-function corruption).
     lu.assertTrue(ok);
     lu.assertEquals(castSpellID, 688);
+
+    -- Restore the INITIALIZED engine (the reloaded table has no event
+    -- handlers registered — later suites would talk to a dead engine).
+    ACP.WorkflowEngine = origEngine;
 end
 
 -- Regression: at level 70 the client may report the unlearned lower rank 11730

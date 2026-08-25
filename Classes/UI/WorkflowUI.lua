@@ -14,7 +14,6 @@ local math_max = _G.math.max;
 local math_min = _G.math.min;
 local math_ceil = _G.math.ceil;
 local GetSpellInfo = _G.GetSpellInfo;
-local UnitClass = _G.UnitClass;
 local CreateFrame = _G.CreateFrame;
 
 local SECTION_GAP = 8;
@@ -34,6 +33,10 @@ local BUTTON_PAD = 10;
 -- CLASS_WARLOCK is NOT a global on TBC Anniversary FrameXML — guarded single
 -- source lives in Data/Constants.
 local CLASS_WARLOCK = ACP.Data.Constants.CLASS_WARLOCK;
+
+local function warlockWorkflows()
+    return ACP.Data.classWorkflows and ACP.Data.classWorkflows(CLASS_WARLOCK);
+end
 
 ---@class WorkflowUI
 local WorkflowUI = {
@@ -174,8 +177,8 @@ end
 ---@param entry table|nil
 ---@return string
 local function stepSpellLabel(step, entry)
-    local stone = ACP.Data.Workflows and ACP.Data.Workflows.stoneRanks
-        and ACP.Data.Workflows.stoneRanks[step.spellID];
+    local rankTable = ACP.Data.Workflows and ACP.Data.Workflows:activeRankTable();
+    local stone = rankTable and rankTable[step.spellID];
 
     if (stone and ACP.WorkflowSpellbook and ACP.WorkflowSpellbook.stoneStepLabel) then
         return ACP.WorkflowSpellbook:stoneStepLabel(entry or { spellID = step.spellID });
@@ -261,6 +264,17 @@ local function spellItems()
             for _, group in ipairs(list) do
                 local isStoneGroup = group.name == "Create Healthstone" or group.name == "Create Spellstone";
 
+                -- A group whose entries ALL carry an explicit rank (Amplify/
+                -- Dampen Magic) is listed per rank so every rank is selectable
+                -- — a plain group entry would only ever add the max rank.
+                local allRanked = #group.entries > 0;
+
+                for _, entry in ipairs(group.entries) do
+                    if (not entry.rank or entry.rank <= 0) then
+                        allRanked = false;
+                    end
+                end
+
                 if (isStoneGroup) then
                     -- Each learned/statically-known rank of a stone-creating
                     -- spell is listed separately with the stone's name so the
@@ -270,6 +284,13 @@ local function spellItems()
                         items[#items + 1] = {
                             value = entry.spellID,
                             label = ACP.WorkflowSpellbook:stoneStepLabel(entry)
+                        };
+                    end
+                elseif (allRanked) then
+                    for _, entry in ipairs(group.entries) do
+                        items[#items + 1] = {
+                            value = entry.spellID,
+                            label = ACP.WorkflowSpellbook:rankStepLabel(entry)
                         };
                     end
                 else
@@ -287,8 +308,9 @@ local function spellItems()
     -- The catalog is Warlock-specific, so it is only offered to Warlocks.
     local equipList = nil;
 
-    if (UnitClass and select(2, UnitClass("player")) == CLASS_WARLOCK) then
-        equipList = ACP.Data.Workflows and ACP.Data.Workflows.equipItems;
+    if (_G.UnitClass and select(2, _G.UnitClass("player")) == CLASS_WARLOCK) then
+        local data = warlockWorkflows();
+        equipList = data and data.equipItems;
     end
 
     if (equipList and #equipList > 0) then
@@ -361,7 +383,8 @@ local function spellCellWidth()
     end
 
     -- Equip rows render the localized item name when it is available.
-    local equipList = ACP.Data.Workflows and ACP.Data.Workflows.equipItems or {};
+    local data = warlockWorkflows();
+    local equipList = (data and data.equipItems) or {};
 
     for _, entry in ipairs(equipList) do
         maxW = math_max(maxW, dropdownTextWidth(entry.name));

@@ -80,6 +80,31 @@ function Items:findItemInBags(itemID, skipSoulbound)
     return nil;
 end
 
+--- All bag slots holding `itemID` with their stack counts (soulbound slots
+--- skipped when requested). One entry per stack — the client moves a whole
+--- stack per UseContainerItem, so the trade queue is built from these.
+---@param itemID number
+---@param skipSoulbound boolean|nil
+---@return table<number, {bag: number, slot: number, count: number}>
+function Items:findItemSlots(itemID, skipSoulbound)
+    local slots = {};
+    local numBags = ACP.Data.Constants.NUM_BAGS;
+
+    for bag = 0, numBags - 1 do
+        local numSlots = self:getContainerNumSlots(bag);
+
+        for slot = 1, numSlots do
+            local bagItemID, stackCount, bound = self:getItemData(bag, slot);
+
+            if (bagItemID == itemID and (not skipSoulbound or not bound)) then
+                tinsert(slots, { bag = bag, slot = slot, count = stackCount or 1 });
+            end
+        end
+    end
+
+    return slots;
+end
+
 ACP.Utils = ACP.Utils or {};
 ACP.Utils.Items = Items;
 

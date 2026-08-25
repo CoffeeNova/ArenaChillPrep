@@ -37,12 +37,16 @@ And `normalizeRankKeys(items)` collapses old string keys on load (numeric wins, 
 
 ## Category key mapping (plural vs singular)
 
-Catalog/classItems use the PLURAL key (`healthstones`); settings use the SINGULAR (`items.healthstone`). Map with `category:sub(1, -2)`:
+Catalog/classItems use the PLURAL key (`healthstones`); settings use the SINGULAR (`items.healthstone`). Map through **`ACP.Data.Items:settingsKeyFor(category)`** — an EXPLICIT map (`settingsKeyByCategory = { healthstones = "healthstone", food = "food", water = "water" }`) with the old trailing-"s" strip as the fallback for unknown keys:
 ```lua
-local settingsKey = category:sub(1, -2);  -- "healthstones" -> "healthstone"
+local settingsKey = ACP.Data.Items:settingsKeyFor(category);
 local setting = ACP.Settings:get("items." .. settingsKey);
 ```
-Getting this wrong produced `itemsReady: category=healthstones setting missing or disabled` — a classic silent bug.
+Do NOT use `category:sub(1, -2)` directly — it breaks for non-plural keys (`"food"` → `"foo"`, `"water"` → `"wate"`), which silently never matched the autotrade settings (fixed 2026-08-25 in OptionsUI / DeliveryController / TradePlanner). Getting the mapping wrong produced `itemsReady: category=healthstones setting missing or disabled` — a classic silent bug.
+
+## Class-scoped workflow defaults (v0.2)
+
+`DefaultSettings.workflows.definitions` is EMPTY; the 5 default workflows live per class in `Data/WarlockWorkflows.defaultDefinitions` / `Data/MageWorkflows.defaultDefinitions` and are filled (deep-copied) by `SettingsMigrator:applyClassDefaults(workflows, englishClass)` when definitions are empty (Settings:_init + PLAYER_LOGIN re-run + Settings:reset). Fresh Mage characters get the Mage defaults; per-character SavedVariables never mix classes.
 
 ## Migration (`ensureDefaults`)
 
@@ -68,16 +72,26 @@ This is how new settings (e.g. a new rank default) reach users who already have 
 - `TradeManager:queueConfiguredItems` — queues `count` of EVERY selected rank;
 - `OptionsUI:rankIsEnabled(settingsKey, rank)` — enabled if ANY itemID of that rank is true.
 
-## Current defaults (v0.1)
+## Current defaults (v0.2)
 
 ```lua
 items.healthstone = {
     enabled = true,
-    count = 1,                       -- per selected rank per trade
+    count = 1,                       -- per selected rank per trade (no UI slider)
     ranks = { [19012]=true, [19013]=true, [22105]=true },  -- Major + Master
 }
+items.food = {                       -- Mage: Conjured Croissant 22019
+    enabled = true,
+    count = 20,                      -- trigger threshold; slider 10-60 step 10 (Data/Items.countRanges)
+    ranks = { [22019]=true },
+}
+items.water = {                      -- Mage: Conjured Glacier Water 22018
+    enabled = true,
+    count = 20,
+    ranks = { [22018]=true },
+}
 ```
-Note: `count` is NOT exposed in the UI (removed by user request) but is used by the logic.
+`count` is the TRIGGER threshold (await N before opening the trade), not a per-trade placement number. `DeliveryController:itemsReady` requires ALL enabled categories to hit their targets (a Mage needs 20 food AND 20 water); Warlock (one category) is unchanged. The count sliders appear only for categories with a `countRanges` entry.
 
 ## Setting values from UI
 

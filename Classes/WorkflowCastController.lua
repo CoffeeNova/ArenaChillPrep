@@ -217,7 +217,13 @@ function WorkflowCastController:waitForInstantEffect(engine, step)
             elseif (engine.instantPressDetected) then
                 detected = true;
             else
-                local start, duration = GetSpellCooldown and GetSpellCooldown(spellID);
+                -- `GetSpellCooldown and GetSpellCooldown(...)` would truncate to
+                -- ONE value (`and` drops the extra returns) — capture both.
+                local start, duration;
+
+                if (GetSpellCooldown) then
+                    start, duration = GetSpellCooldown(spellID);
+                end
 
                 if (start and duration and duration > 0 and start >= stepStart) then
                     detected = true;
@@ -239,7 +245,11 @@ function WorkflowCastController:waitForInstantEffect(engine, step)
         end
 
         -- Non-buff step: advance once the GCD clears after detection.
-        local _, duration = GetSpellCooldown and GetSpellCooldown(spellID);
+        local duration;
+
+        if (GetSpellCooldown) then
+            _, duration = GetSpellCooldown(spellID);
+        end
 
         if (not (duration and duration > 0) and ticks >= 3) then
             ACP.Utils.Timers:cancel("WorkflowGCD");

@@ -97,6 +97,50 @@ function testFindItemMissing()
     lu.assertIsNil(slot);
 end
 
+function testFindItemSlots()
+    -- Arrange: two stacks of the same item across bags + a different item.
+    installBags({
+        [0] = { { itemID = 22019, stackCount = 10, bound = false } },
+        [1] = {
+            { itemID = 22018, stackCount = 10, bound = false },
+            { itemID = 22019, stackCount = 10, bound = false },
+        },
+    });
+    -- Act
+    local slots = Items:findItemSlots(22019);
+    -- Assert
+    lu.assertEquals(#slots, 2);
+    lu.assertEquals(slots[1].bag, 0);
+    lu.assertEquals(slots[1].slot, 1);
+    lu.assertEquals(slots[1].count, 10);
+    lu.assertEquals(slots[2].bag, 1);
+    lu.assertEquals(slots[2].slot, 2);
+end
+
+function testFindItemSlotsSkipsSoulbound()
+    -- Arrange
+    installBags({
+        [0] = {
+            { itemID = 22019, stackCount = 10, bound = true },
+            { itemID = 22019, stackCount = 10, bound = false },
+        },
+    });
+    -- Act
+    local slots = Items:findItemSlots(22019, true);
+    -- Assert
+    lu.assertEquals(#slots, 1);
+    lu.assertEquals(slots[1].slot, 2);
+end
+
+function testFindItemSlotsMissing()
+    -- Arrange
+    installBags({ [0] = { { itemID = 22019, stackCount = 10, bound = false } } });
+    -- Act
+    local slots = Items:findItemSlots(99999);
+    -- Assert
+    lu.assertEquals(#slots, 0);
+end
+
 function testGetContainerNumSlotsNoApi()
     -- Arrange: remove both container APIs → shim returns 0.
     local origGlobal = _G.GetContainerNumSlots;

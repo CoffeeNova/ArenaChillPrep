@@ -1,10 +1,10 @@
 -- ArenaChillPrep — Classes/UI/Welcome
--- First-run welcome popup: shown once per account on PLAYER_LOGIN, Warlocks
--- only (the addon is Warlock-only). Two very short feature lines + two
--- buttons. The CTA dismisses the popup, opens the settings panel on the
--- Workflows tab and highlights the Key-capture button of workflow slot 1
--- (pulsing gold ring + auto-start of the key capture) so the player just
--- presses a key.
+-- First-run welcome popup: shown once per account on PLAYER_LOGIN for
+-- supported classes (Warlock/Mage), with class-conditional feature lines.
+-- Two very short feature lines + two buttons. The CTA dismisses the popup,
+-- opens the settings panel on the Workflows tab and highlights the
+-- Key-capture button of workflow slot 1 (pulsing gold ring + auto-start of
+-- the key capture) so the player just presses a key.
 --
 -- Client gotchas honored (see .ai/skills/wow-api-20506):
 --   * CreateFrame(..., "BackdropTemplate") is MANDATORY before SetBackdrop;
@@ -18,6 +18,7 @@
 local _, ACP = ...;
 
 local CreateFrame = _G.CreateFrame;
+local select = _G.select;
 
 local WELCOME_W = 420;
 local WELCOME_H = 330;
@@ -51,6 +52,17 @@ local Welcome = {
 
 ---@type Welcome
 ACP.Welcome = Welcome;
+
+--- Class-conditional feature lines (Mages get the food/water wording).
+---@return string line1
+---@return string line2
+local function welcomeLines()
+    if (UnitClass and select(2, UnitClass("player")) == ACP.Data.Constants.CLASS_MAGE) then
+        return ACP.L.welcomeLine1Mage, ACP.L.welcomeLine2Mage;
+    end
+
+    return ACP.L.welcomeLine1, ACP.L.welcomeLine2;
+end
 
 --- Stop the keybind highlight pulse (ring + timers).
 function Welcome:stopPulse()
@@ -254,14 +266,15 @@ function Welcome:show()
     line1:SetPoint("LEFT", frame, "LEFT", 24, 0);
     line1:SetPoint("RIGHT", frame, "RIGHT", -24, 0);
     line1:SetJustifyH("CENTER");
-    line1:SetText(L.welcomeLine1);
+    local featureLine1, featureLine2 = welcomeLines();
+    line1:SetText(featureLine1);
 
     local line2 = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight");
     line2:SetPoint("TOP", line1, "BOTTOM", 0, -8);
     line2:SetPoint("LEFT", frame, "LEFT", 24, 0);
     line2:SetPoint("RIGHT", frame, "RIGHT", -24, 0);
     line2:SetJustifyH("CENTER");
-    line2:SetText(L.welcomeLine2);
+    line2:SetText(featureLine2);
 
     local cta = CreateFrame("Button", "ACPWelcomeCtaButton", frame, "UIPanelButtonTemplate");
     cta:SetSize(150, 24);

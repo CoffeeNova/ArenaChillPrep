@@ -8,8 +8,16 @@ ACP.Data = ACP.Data or {};
 
 ---@class Constants
 ACP.Data.Constants = {
-    -- Not a global on TBC FrameXML (retail-only constant).
+    -- Not globals on TBC FrameXML (retail-only constants).
     CLASS_WARLOCK = _G.CLASS_WARLOCK or "WARLOCK",
+    CLASS_MAGE = _G.CLASS_MAGE or "MAGE",
+    CLASS_PRIEST = _G.CLASS_PRIEST or "PRIEST",
+    CLASS_PALADIN = _G.CLASS_PALADIN or "PALADIN",
+    CLASS_DRUID = _G.CLASS_DRUID or "DRUID",
+    CLASS_HUNTER = _G.CLASS_HUNTER or "HUNTER",
+    CLASS_SHAMAN = _G.CLASS_SHAMAN or "SHAMAN",
+    CLASS_ROGUE = _G.CLASS_ROGUE or "ROGUE",
+    CLASS_WARRIOR = _G.CLASS_WARRIOR or "WARRIOR",
 
     GATE_SAFETY_DEFAULT = 15,
 

@@ -25,6 +25,8 @@ graph TD
         D[Data/DefaultSettings.lua]
         L[Data/Localization.lua]
         WF[Data/Workflows.lua]
+        WW[Data/WarlockWorkflows.lua]
+        MW[Data/MageWorkflows.lua]
     end
 
     subgraph Core
@@ -47,6 +49,8 @@ graph TD
         WSB[Classes/WorkflowSpellbook.lua]
         SCAT[Classes/SpellbookCatalogBuilder.lua]
         SEXT[Classes/WarlockCatalogExtender.lua]
+        MEXT[Classes/MageCatalogExtender.lua]
+        CDIS[Classes/ClassCatalogDispatch.lua]
         SLBL[Classes/SpellbookLabels.lua]
         WE[Classes/WorkflowEngine.lua]
         WB[Classes/WorkflowBindings.lua]
@@ -85,7 +89,7 @@ graph TD
     AP -- "buff lost" --> WE
     INV -- "items changed (itemID, count)" --> DC
     DC -- "startTrade(unit) / queueItems(...)" --> TM
-    TP -- "buildQueue" --> DC
+    TP -- "categoriesForPartner / buildQueue(unit)" --> DC
     TM -- "trade result (opened/closed/completed)" --> DC
     WE -- "getDefinition/getCatalogEntry" --> WREPO
     WE -- "step executors (engine state)" --> WCC
@@ -93,7 +97,13 @@ graph TD
     WE -- "step executors (engine state)" --> WIS
     WE -- "buttons + key bindings" --> WB
     WSB -- "rebuild orchestration" --> SCAT
-    WSB -- "rebuild orchestration" --> SEXT
+    WSB -- "rebuild orchestration" --> CDIS
+    CDIS -- "active class" --> SEXT
+    CDIS -- "active class" --> MEXT
+    SEXT -- "warlock data" --> WW
+    MEXT -- "mage data" --> MW
+    WF -- "classWorkflows registry" --> WW
+    WF -- "classWorkflows registry" --> MW
     WSB -- "labels" --> SLBL
     S -- "migrations" --> SMIG
     WUI -- "CRUD + step factory" --> WREPO
@@ -205,7 +215,7 @@ ACP.Inventory:findItem(itemID, skipSoulbound) -> bagID, slot, count | nil
 - Listens to `BAG_UPDATE` / `BAG_UPDATE_DELAYED`.
 - When the count of any tracked item changes — `Events:fire("ACP_ITEMS_CHANGED", itemID, count)`.
 - Cache: after `BAG_UPDATE` only the affected bag is re-counted (optimization); a full scan invalidates everything.
-- The set of tracked itemIDs comes from `ACP.Data.Items` + settings (which ranks are enabled).
+- The set of tracked itemIDs comes from `ACP.Data.Items.classItems[englishClass]` + settings (which ranks are enabled) — `classItems` maps `WARLOCK → {healthstones}` and `MAGE → {food, water}`. `UnitClass` is read at CALL time (the class is unknown at ADDON_LOADED; `_buildTrackedItems` re-runs on PLAYER_LOGIN).
 
 ### 2.5 `Classes/DeliveryController.lua` — orchestrator (core logic)
 
@@ -237,15 +247,26 @@ state = ACTIVE
 `ACTIVE` state logic (on each `ACP_ITEMS_CHANGED` event or ticker):
 
 ```
-for each (itemID, setting) in items:
-    count = ACP.Inventory:getCount(itemID)
-    if count >= setting.count:
-        ready = true
-        break
-if ready and partner determined (not in givenTo) and not in combat
+partner = findPartner()          -- first eligible party member (not in givenTo)
+categories = TradePlanner:categoriesForPartner(partner)
+                                  -- a Mage gives water only to mana-using partner classes
+for each category in categories:
+    for each selected rank (paired IDs count as ONE rank):
+        count = sum of ACP.Inventory:getCount(itemID)
+        if count < setting.count: not ready
+if ready and not in combat
         and (ACP.ArenaPrep:getRemainingTime() or math.huge) >= Settings:get("gateSafetySeconds"):
-    ACP.TradeManager:startTrade(partnerUnit)
+    ACP.TradeManager:startTrade(partner)
 ```
+
+**Per-partner readiness (v0.3, 2026-08-26).** The partner is determined BEFORE the
+readiness check, and `itemsReady(partner)` only requires the categories the partner
+should receive (`TradePlanner:categoriesForPartner`): a Mage requires BOTH food AND
+water for a mana-using partner (Priest/Paladin/Warlock/Druid/Hunter/Shaman — table
+`Data.Items.magePartnerCategories`), but only food for a Rogue/Warrior partner (water
+stays in the bags and never blocks the trade). Unlisted partner classes (unknown at
+call time) receive everything. Warlock autotrade is untouched — the table only filters
+the MAGE's categories; a Warlock's healthstones go to every partner.
 
 - **Partner detection** (`partnerMode`):
   - `"auto"` (default): the first party member that isn't `"player"`, is within trade range (`UnitExists`, `UnitIsUnit`) and is **not in `givenTo`**. All party members are friendly in an arena.
@@ -254,7 +275,7 @@ if ready and partner determined (not in givenTo) and not in combat
 - **Per-partner trade protection (`givenTo`):** runtime-only set (per prep, **not** saved to `ArenaChillPrepDB`) of partners who already received items, reset on `ACP_BUFF_LOST`. Partner detection skips `givenTo` members; after `ACP_TRADE_COMPLETED` the partner is added. When no eligible partner remains → `DONE`; otherwise the controller returns to `ACTIVE` to await the next crafted item. (2v2 = one partner → effectively one trade per prep.)
 - **Gate safety:** a trade is only initiated while `ArenaPrep:getRemainingTime() >= Settings:get("gateSafetySeconds")` (default 15); pending initiations/retries are cancelled once the remaining time drops below the threshold. An already-open trade window is left untouched.
 - **Reset:** `ACP_BUFF_LOST` or entering combat → `IDLE` (the combat flag clears on `PLAYER_REGEN_ENABLED`).
-- **Shared preconditions (refactor Phases 3-4, 2026-08-24):** `canStartTrade` delegates the shared gates (enabled / in-arena / not-in-combat / not-dead / gate safety) to `ACP.Preconditions`; the WHAT-to-pass grouping lives in `ACP.TradePlanner` — `DeliveryController:categoryReady`/`itemsReady` delegate to it, and on `ACP_TRADE_OPENED` the controller fills the TradeManager queue with `TradePlanner:buildQueue()`. State writes go through the `ACP.StateMachine` mixin (`setState` with enum validation — `Data.Constants.DELIVERY_STATE`).
+- **Shared preconditions (refactor Phases 3-4, 2026-08-24):** `canStartTrade` delegates the shared gates (enabled / in-arena / not-in-combat / not-dead / gate safety) to `ACP.Preconditions`; the WHAT-to-pass grouping lives in `ACP.TradePlanner` — `DeliveryController:categoryReady`/`itemsReady` delegate to it, and on `ACP_TRADE_OPENED` the controller fills the TradeManager queue with `TradePlanner:buildQueue(unit)` (the partner is normalized name → `partyN` token first, so the per-partner class filters can read `UnitClass`). State writes go through the `ACP.StateMachine` mixin (`setState` with enum validation — `Data.Constants.DELIVERY_STATE`).
 
 ### 2.6 `Classes/TradeManager.lua` — trade automation
 
@@ -267,7 +288,7 @@ ACP.TradeManager:cancel()             -- cancel/reset the current attempt
 ACP.TradeManager:getPartner() -> string|nil  -- unit token of the trade in progress
 ```
 
-- **Restored low-level contract (refactor Phase 3, 2026-08-24):** the `queueConfiguredItems` decision logic (Settings/Data/Inventory reads) lived here against the "dependency-free" contract — it now lives in `Classes/TradePlanner.lua`. TradeManager only places whatever the orchestrator queues: on `TRADE_SHOW` it fires `ACP_TRADE_OPENED`, and the `DeliveryController` fills the queue via `TradePlanner:buildQueue()` before the FIFO ticker starts.
+- **Restored low-level contract (refactor Phase 3, 2026-08-24):** the `queueConfiguredItems` decision logic (Settings/Data/Inventory reads) lived here against the "dependency-free" contract — it now lives in `Classes/TradePlanner.lua`. TradeManager only places whatever the orchestrator queues: on `TRADE_SHOW` it fires `ACP_TRADE_OPENED`, and the `DeliveryController` fills the queue via `TradePlanner:buildQueue(unit)` before the FIFO ticker starts. **Queue entries are per BAG STACK (v0.3):** the client moves a WHOLE stack per `UseContainerItem` (the observed live behavior: 20 conjured food landed as 2×10 whole stacks while the water never followed), so `buildQueue` enqueues one entry per stack slot (`Utils/Items:findItemSlots`), limited to the stacks needed to reach `count`. The old per-ITEM queue (20 entries per category) wasted ~18 no-op ticks per category after the first stack — the food landed in 0.3 s, water sat in the bags for 3+ s while the player accepted the food-only trade — and depended on the mid-trade queue rebuild to shrink.
 
 WoW events: `TRADE_SHOW`, `TRADE_CLOSED`, `TRADE_ACCEPT_UPDATE`, `TRADE_TARGET_ITEM_CHANGED`, `ITEM_UNLOCKED`, `UI_INFO_MESSAGE`.
 
@@ -305,8 +326,10 @@ InitiateTrade(unit)
 - `ArenaChillPrepDB` — SavedVariables (see `.ai/CONTEXT.md`).
 - `Settings:get(path)` / `Settings:set(path, value)` — access by dot path (`"items.soulstone.count"`).
 - `Settings:reset()` — restores a **deep copy** of `ACP.Data.DefaultSettings` (via `Utils/Tables:deepCopy`, so the live Data never shares nested tables with the defaults) and re-syncs the panel via the `ACP_SETTINGS_RESET` event (OptionsUI subscribes; no reverse data → UI call — refactor Phase 2, 2026-08-24). Used by the "Reset to defaults" button in the General subcategory.
-- On load — deep merge of defaults and saved data (robust against new settings added in future versions). The **workflows branch merges per-slot REPLACE, not deepMerge**: a saved `definitions[N]` fully wins over the default one. (deepMerge would index-merge the steps ARRAYS and produce hybrids of old + new default steps.) `ensureDefaults` is array-aware for the same reason — missing step indices are never filled from defaults. Placeholder definitions from the previous defaults (exact name + steps match) are replaced by the new m6-macro defaults before the merge (`migratePlaceholderDefinitions`); user-edited definitions are never touched.
-- **Refactor Phase 7:** the whole migration/normalization pipeline lives in `Classes/SettingsMigrator.lua` (`migrateWorkflowNames`, `migrateStepSpellIDs`, `migratePlaceholderDefinitions`, `normalizeRankKeys`, `ensureDefaults`) — Settings keeps only the dot-path store, `persist` and the `_init` orchestration.
+- On load — deep merge of defaults and saved data (robust against new settings added in future versions). The **workflows branch merges per-slot REPLACE, not deepMerge**: a saved `definitions[N]` fully wins over the default one. (deepMerge would index-merge the steps ARRAYS and produce hybrids of old + new default steps.) `ensureDefaults` is array-aware for the same reason — missing step indices are never filled from defaults. Placeholder definitions from the previous defaults (exact name + steps match) are replaced by the Warlock class defaults before the merge (`migratePlaceholderDefinitions`); user-edited definitions are never touched.
+- **Class-gated default definitions (v0.2):** `DefaultSettings.workflows.definitions` is EMPTY. `SettingsMigrator:applyClassDefaults(workflows, englishClass)` fills slots 1..5 (deep-copied) from the active class's `defaultDefinitions` (`Data/WarlockWorkflows.lua` / `Data/MageWorkflows.lua`) when definitions are empty — run in `Settings:_init()` (skipped when `UnitClass("player")` is nil at ADDON_LOADED) and re-run on PLAYER_LOGIN. `Settings:reset()` re-applies them. Per-character SavedVariables guarantee a Mage never receives Warlock definitions.
+- **`itemsReady` requires all enabled categories of the PARTNER (v0.2 → v0.3):** a Mage trades only when the count targets of every category the PARTNER should receive are met (`categoryReady` per category; the settings key maps through `Data.Items:settingsKeyFor(category)` — the old `category:sub(1, -2)` strip broke for "food"/"water"). `itemsReady(partnerUnit)` delegates the per-partner category selection to `TradePlanner:categoriesForPartner(partnerUnit)` — food AND water for mana-using partner classes, food only for Rogue/Warrior; without a partner unit it means "every enabled category" (a Warlock has one category, so its behavior is unchanged either way).
+- **Refactor Phase 7:** the whole migration/normalization pipeline lives in `Classes/SettingsMigrator.lua` (`migrateWorkflowNames`, `migrateStepSpellIDs`, `migratePlaceholderDefinitions`, `applyClassDefaults`, `normalizeRankKeys`, `ensureDefaults`) — Settings keeps only the dot-path store, `persist` and the `_init` orchestration.
 
 ### 2.8 `Classes/OptionsUI.lua` (+ `Classes/UI/Widgets.lua`, `Classes/UI/WorkflowUI.lua`, `Classes/WorkflowSpellbook.lua`)
 
@@ -334,12 +357,14 @@ ACP.UI.ScrollFrame(parent, x, y, w, h)            -- returns sf with .ScrollChil
 - Client gotchas honored: `CreateFrame(..., "BackdropTemplate")` is mandatory before `SetBackdrop`; `OptionsSliderTemplate` does NOT create a global `"<name>Text"` (the label is built manually with `CreateFontString` above the slider); no Ace — all controls are Blizzard templates (`UICheckButtonTemplate`, `OptionsSliderTemplate`, `UIPanelButtonTemplate`, `UIDropDownMenuTemplate`, `InputBoxTemplate`, `UIPanelScrollFrameTemplate`).
 - `UI.Dropdown` requires a **unique global name** per instance: `UIDropDownMenuTemplate` names its children `<name>Text`/`<name>Button`/`<name>Left`/..., so anonymous frames would collide on those globals. Same for `UI.TextInput` (`InputBoxTemplate` → `<name>Left`/`<name>Middle`/`<name>Right`). `UI.ScrollFrame` auto-uniquifies its name (embedded `<name>ScrollBar`). Dropdown items are `{value, label, isTitle?}` arrays or builder functions re-evaluated on every menu open; selection is driven by `getter()` (value-based checkmark + collapsed label via `UIDropDownMenu_SetSelectedValue`), the setter writes the new value, and `.Refresh` re-runs the initializer.
 
-**`Classes/WorkflowSpellbook.lua`** — runtime spell catalog for the Workflow editor (`ACP.WorkflowSpellbook`), a **facade** (refactor Phase 7) over `SpellbookCatalogBuilder` (catalog assembly, rank metadata, reads), `WarlockCatalogExtender` (class-gated static fallback + pet/stone extras) and `SpellbookLabels` (`stoneStepLabel`). The catalog is rebuilt from the STATIC data only (the live spellbook scan was removed — see ADR 17): a Warlock gets the full static catalog, other classes get an empty one:
+**`Classes/WorkflowSpellbook.lua`** — runtime spell catalog for the Workflow editor (`ACP.WorkflowSpellbook`), a **facade** (refactor Phase 7) over `SpellbookCatalogBuilder` (catalog assembly, rank metadata, reads), the per-class extenders (`WarlockCatalogExtender` / `MageCatalogExtender`, both behind `ClassCatalogDispatch` — the ACTIVE class's static fallback + extras) and `SpellbookLabels` (`stoneStepLabel`). The catalog is rebuilt from the STATIC data only (the live spellbook scan was removed — see ADR 17): a Warlock gets the full Warlock static catalog, a Mage the full Mage catalog (v0.2), other classes an empty one:
 
-- The catalog is assembled from the static data (`Data/Workflows.spells` + `stoneRanks`) with the Warlock gate; known workflow metadata (summon/create-item/buff/target/reagent behavior) enriches the entries, and the pet abilities + the full stone-rank list are merged in for a confirmed Warlock (a Mage or any other class gets an empty Add Step list — no hardcoded Warlock spells).
+- The catalog is assembled from the ACTIVE class's static data (`ACP.Data.classWorkflows(englishClass).spells` + its rank table via `Data/Workflows:rankedCreates(data)` = `conjuredRanks or stoneRanks`) with the class gate in `ClassCatalogDispatch` (no-op for unknown classes). Known workflow metadata (summon/create-item/buff/target/reagent behavior) enriches the entries, and the pet abilities + the full stone-rank list are merged in for a confirmed Warlock; the conjured ranks (Conjure Food 33717→22019, Conjure Water 27090→22018) are merged for a confirmed Mage. `WorkflowSpellbook:scan()` calls `ClassCatalogDispatch:merge()` + `ClassCatalogDispatch:addStaticFallback()`; the old facade delegates (`mergeStaticWarlock`/`addStaticFallback`) route through the dispatcher so callers/tests keep compiling. **Module rule (v0.2):** read `UnitClass` at CALL time — never capture it at file scope (the class is unknown at ADDON_LOADED and tests override the stub; `TradePlanner` previously captured it and blocked the per-class mapping).
+- **Mage catalog (v0.2):** 13 buffs (Arcane Brilliance 27127, Arcane Intellect 27126, Amplify Magic 1008+33946 as TWO separate same-name entries with `rank` 1/6, Dampen Magic 604+33944 likewise, Mage Armor 27125, Molten Armor 30482, Ice Armor 27124, Fire Ward 27128, Frost Ward 32796, Ice Barrier 33405, Invisibility 66 — all user-verified 2026-08-25) + createItem (Conjure Food 33717→Conjured Croissant 22019, Conjure Water 27090→Conjured Glacier Water 22018 — **verified: rank-8 food creates the CROISSANT, not the Manna Biscuit 34062 which comes from the Ritual of Refreshment table**) + utility (Ritual of Refreshment 43987 — Summon Object, no bag item). No summons/pets/equipItems for a Mage (the equip-items Add-Step category stays Warlock-only). **Ranked-buff menu listing:** a group whose entries ALL carry a rank (Amplify/Dampen) is listed per rank in Add Step (`SpellbookLabels:rankStepLabel`) so rank 1 is selectable — a plain group entry would only ever add the max rank; `SpellbookCatalogBuilder:addEntry` takes the rank from `staticMetadata` (matched by exact spellID FIRST — a name-match returns the first same-name entry's metadata for all of them).
 - **Soul Link catalog fix (2026-08-22):** the catalog previously shipped `6307` as Soul Link — but 6307 is the Imp's **Blood Pact** passive (verified via WeakAurasTemplates TBC data). The correct Soul Link talent spell is **19028** (its applied aura is 25228, also named "Soul Link" — skip-if-buffed matches by NAME). The old entry made the UI show "Blood Pact" and the skip check matched the imp's always-on aura, so Soul Link was never cast. `Settings:migrateStepSpellIDs` rewrites saved cast steps `6307 → 19028` on load.
 - **Ranked-buff catalog = max rank only (2026-08-25):** Demon Armor ships as its TBC max rank **27260** (user-verified in-game) — the old rank-1 706 was replaced in the spellbook at 70 and never cast. A saved 706 step is migrated to 27260 (same `migrateStepSpellIDs` pipeline as Soul Link). **Create Soulstone (693) and Ritual of Summoning (698) were REMOVED** from the catalog (user decision — no arena use / no such spell on this client); saved steps with either are skipped as unknown at runtime (they resolve to no known family rank).
-- **createItem item-variant expansion (2026-08-22):** healthstone ranks 1-5 exist as historical item-ID pairs (`19012/19013` etc.); the client conjures ONE variant per rank (rank 5 → `19013`, live-verified — a cast stored as `11730/19012` still creates `19013`). `stoneRanks[spellID].itemIDs` lists both variants; the engine's expected-item set, goal-met skip and the unlearned-rank fallback all expand to the full variant set — a step completes only on its OWN rank (never another rank's stone), but on either variant of that rank.
+- **createItem item-variant expansion (2026-08-22):** healthstone ranks 1-5 exist as historical item-ID pairs (`19012/19013` etc.); the client conjures ONE variant per rank (rank 5 → `19013`, live-verified — a cast stored as `11730/19012` still creates `19013`). The rank tables' `itemIDs` list the variants; the engine's expected-item set, goal-met skip and the unlearned-rank fallback all expand to the full variant set — a step completes only on its OWN rank (never another rank's stone), but on either variant of that rank. Mage conjured items have a SINGLE itemID per rank (`conjuredRanks[27090].itemIDs = { 22018 }`).
+- **Conjure-step count-target goal-met (v0.2):** `WorkflowItemSteps:isItemAlreadyPresent` checks the active class's rank table; when the entry's `category` maps (via `Items:settingsKeyFor`) to an ENABLED `items.<key>` setting with a `count`, the goal is `totalCount >= setting.count` (the autotrade trigger threshold — two identical Conjure Water steps conjure 10+10 while the skip fires only at 20; Mage defaults ship 2× Conjure Water + 2× Conjure Food). Otherwise the old "any variant present" behavior holds. Warlock stones map to `items.healthstone.count = 1` — "≥ 1 present" is identical to the old check (no Warlock change); spellstones have no items setting → unchanged delta path. Completion (`isItemCreated`) stays DELTA-based — a cast that adds a stack advances the step.
 - **Pet-ability steps armed during a player cast:** a pet step that directly follows a cast-time step is armed (macro baked on the secure button) so its key can be pressed DURING the cast — but ONLY when the pet EXISTS (`UnitExists("pet")` gate, 2026-08-22: arming during a SUMMON made a mid-cast press execute the pet macro with no pet to route it to, interrupting the summon and popping "blocked action"; without the pet the buttons are made inert and the step runs standalone after the summon completes). Pet macros bake BOTH conditionals — `/cast [pet:<type>,@unit] <ability>`: `[@unit]` targets, `[pet:<type>]` makes the macro a no-op when that pet is not out. **Verification (2026-08-22):** the client silently swallows a pet ability pressed EARLY in the player's cast (Sacrifice at +2s of a 6s summon did nothing; +5s fired, live-verified). The engine must NOT mark the step done on the press itself — `isPetAbilityApplied(step)` verifies the effect (buff present on target by NAME, or the Voidwalker consumed during the cast); if unverified, `armPetVerify` polls every 0.1s and the step stays armed — the user's spam eventually lands the ability. `petStepDone` survives `advance()` (the cast-completion transition) so a confirmed armed press skips the pet step; `pause()`/`reset()`/cast-interrupt/`cancelTimers` all clear the poll.
 - **One press = start + cast (2026-08-22):** each slot's Key Bindings UI key is pointed at a per-slot hidden secure button (`ACPWorkflowButton<N>`) via `SetOverrideBindingClick(owner, true, key, button)` — a PRIORITY OVERRIDE (BetterFishing pattern, verified on 20506). The player's command binding is NEVER displaced: `GetBindingKey` keeps returning the real binding, so the Blizzard Key Bindings UI and the Workflows-tab key capture work normally (the transient `SetBindingClick` takeover broke key assignment entirely and was removed). The button's **PreClick** starts/resumes the slot and arms the step; the SAME press's click casts it (ItemRack pattern). `applySlotBindings` is a full resync (clear overrides → re-apply from the authoritative binding table — safe because the table itself is never modified) on PLAYER_LOGIN / UPDATE_BINDINGS / PLAYER_REGEN_ENABLED / late-binding retry; overrides are dropped while the Blizzard Key Bindings UI is shown (OnShow/OnHide hooks) so its capture dialog gets the presses; they die with the session (nothing to restore/persist on logout). The /acp bind hotkey keeps its own cast-only button.
 - **gateSafety only blocks cast-time steps (2026-08-22):** instant spells, pet abilities and equipItem steps are exempt — they complete in <1 GCD and cannot be caught mid-cast when the gates open. A gateSafety pause on an instant step created a resume→pause infinite loop in the arena's last seconds.
@@ -366,7 +391,8 @@ ACP.UI.ScrollFrame(parent, x, y, w, h)            -- returns sf with .ScrollChil
 - Top-level category **ArenaChillPrep** with tabbed subcategories via `Settings.RegisterCanvasLayoutSubcategory`:
   - **General** — master switch (`enabled`), **"Enable workflow engine"** (`workflows.enabled`; drives `setWorkflowsEnabled`) and the **"Reset to defaults" button** (`ACP.Settings:reset()`).
   - **Workflows** — content delegated to `ACP.WorkflowUI:build` (see above); workflow data is character-specific.
-  - **Autotrade** — two columns: left = bracket checkboxes (2v2 enabled; 3v3/5v5 permanently disabled + alpha 0.4) and timing sliders (`tradeDelay`, `gateSafetySeconds`) with a **header divider** between them; right = rank checkboxes (from `ACP.Data.Items.classItems` for the player's class).
+  - **Autotrade** — two columns: left = bracket checkboxes (2v2 enabled; 3v3/5v5 permanently disabled + alpha 0.4) and timing sliders (`tradeDelay`, `gateSafetySeconds`) with a **header divider** between them; right = rank checkboxes (from `ACP.Data.Items.classItems` for the player's class, stacked per category with a vertical cursor) + per-category **count sliders** below the rank rows for categories with a `Data/Items.countRanges` entry (Mage food/water, 10–60 step 10, default 20 — `items.<settingsKey>.count`; Warlock healthstone has a fixed count and no slider).
+- `isSupportedClass()` accepts `CLASS_WARLOCK` AND `CLASS_MAGE` (v0.2) — anything else renders the single Compatibility page; the sub-command gate in the `/acp` handler uses the same check.
 - Every control has a tooltip; master switch off → all Autotrade controls are disabled + grayed (conditional disable via `setAutotradeEnabled`, on top of the permanent 3v3/5v5 disable). Workflow engine off → the Workflows tab shows a status warning + an "Enable workflow engine" CTA button (via `setWorkflowsEnabled` → `ACP.WorkflowUI:setEnabled` → `refreshStatus`) instead of graying out; the editor stays usable (edits persist regardless of the gate). The Workflows tab is fully editable even for slots whose `enabled` flag is false (the editor operates on the raw `definitions.N` data, independent of the runtime gate).
 - Subcategory frames get `OnCommit`/`OnDefault`/`OnRefresh` hooks that call `refresh()` so controls (incl. the keybind display) are re-synced when the tab is shown.
 - Slash command `/acp` (see `.ai/CONTEXT.md`) + `SLASH_ACP1`.
@@ -417,19 +443,45 @@ settings logic of its own):
 
 ```lua
 ACP.Data.Items = {
-    soulstones = {  -- v0.1: only these
-        [16892] = { id = 16892, rank = 1, name = "Minor Soulstone" },
-        [16893] = { id = 16893, rank = 2, name = "Lesser Soulstone" },
-        [16894] = { id = 16894, rank = 3, name = "Soulstone" },
-        [16895] = { id = 16895, rank = 4, name = "Greater Soulstone" },
-        [22103] = { id = 22103, rank = 5, name = "Major Soulstone" },
-    },
-    -- future categories (v0.2+): food, water, totems, ...
+    healthstones = { ... 11 records, ranks 1-6 (ID pairs) ... },
+    soulstones = { ... 5 records, ranks 1-5 ... },
+    -- Mage conjured items (one ID per rank).
+    food  = { [22019] = { id = 22019, rank = 8, name = "Conjured Croissant" } },
+    water = { [22018] = { id = 22018, rank = 9, name = "Conjured Glacier Water" } },
+
+    -- Which catalog keys the player's class can pass (drives Inventory,
+    -- TradePlanner and the Autotrade rank rows).
     classItems = {
-        [CLASS_WARLOCK] = { "soulstones" },
-        -- [CLASS_MAGE]   = { "food", "water" },
+        [CLASS_WARLOCK] = { "healthstones" },
+        [CLASS_MAGE]    = { "food", "water" },
     },
+
+    -- Mage conjured categories per PARTNER class (autotrade filter, v0.3):
+    -- mana users take food AND water, Rogues/Warriors take food only.
+    -- Unlisted partner classes receive everything. Warlock healthstones are
+    -- unaffected — this table only filters the MAGE's categories.
+    magePartnerCategories = {
+        [CLASS_PRIEST]  = { "food", "water" },
+        [CLASS_PALADIN] = { "food", "water" },
+        [CLASS_WARLOCK] = { "food", "water" },
+        [CLASS_DRUID]   = { "food", "water" },
+        [CLASS_HUNTER]  = { "food", "water" },
+        [CLASS_SHAMAN]  = { "food", "water" },
+        [CLASS_ROGUE]   = { "food" },
+        [CLASS_WARRIOR] = { "food" },
+    },
+
+    -- Explicit plural → singular settings-key map (the `sub(1, -2)` strip
+    -- breaks for "food" → "foo"); fallback keeps the strip for unknown keys.
+    settingsKeyByCategory = { healthstones = "healthstone", food = "food", water = "water" },
+
+    -- Per-category count-slider ranges (trigger threshold, 10-60 step 10).
+    countRanges = { food = { min = 10, max = 60, step = 10 }, water = { ... } },
 }
+
+function Items:settingsKeyFor(category)
+    return Items.settingsKeyByCategory[category] or category:sub(1, -2);
+end
 ```
 
 The `classItems` mapping is what flexibility is built on: the addon knows what the current class can pass and shows only relevant settings.
@@ -571,6 +623,7 @@ sequenceDiagram
 18. **Slot keys = two keys (fixed 2026-08-24).** A command can be bound to two keys in the Key Bindings UI. `WorkflowBindings:applySlotBindings` puts the priority override on BOTH keys (the second otherwise only fired the start action and could never cast an armed step), and `WorkflowKeybindController:setSlotKey` clears BOTH on rebind. Root-cause pattern: `GetBindingKey and GetBindingKey(command)` drops the second return value (`and` truncates to one).
 19. **`knowsSpell` checks the RESOLVED cast rank (fixed 2026-08-25).** On 20506 a trained higher rank replaces the lower one in the spellbook and `IsPlayerSpell(name)` does not match by base name, so the stored-ID-only check skipped every step whose stored rank wasn't the player's current rank (live: Demon Armor 706, healthstone ranks 1-5, spellstone ranks 1-3 — only the max ranks worked). `WorkflowEngine:knowsSpell` now calls `resolveCastInfo(step)` (family → highest KNOWN rank) and checks the RESOLVED ID; a step whose whole family is unknown (a removed catalog spell) still resolves to its stored ID and is skipped. The static catalog stores max-rank-only entries for ranked buffs — Demon Armor = **27260** (user-verified 2026-08-25; replaced the never-castable 706); `SettingsMigrator:migrateStepSpellIDs` rewrites saved 706 → 27260. Create Soulstone (693) and Ritual of Summoning (698) were REMOVED from the catalog (2026-08-25, user decision — no arena use / no such spell on this client); saved steps with them are skipped as unknown at runtime. **Create Spellstone ranks 1-3 (2362/28171/28173) were REMOVED from `stoneRanks` (2026-08-25, user decision — no arena use; live tests: rank 1 casts verbatim, ranks 2-3 upgrade to Master)** — only rank 4 (28172/22646) remains; saved lower-rank createItem steps are migrated to 28172/22646 by the same `migrateStepSpellIDs` pipeline.
 20. **Pre-existing buff ≠ instant-cast completion (fixed 2026-08-25).** With `skipIfBuffedDefault` OFF, `WorkflowCastController:waitForInstantEffect` treated an already-present buff as "the cast landed" and auto-advanced buff steps on the first poll tick with NO key press (live: Unending Breath steps silently "completed" while the previous arena's 10-minute buff was still up). The wait now snapshots the aura's `expirationTime` at step start via `WorkflowEngine:getBuffExpiration(unit, name)` (a `hasBuff` variant that also reads the expiration): a buff step completes on mere presence only when the buff was ABSENT at start; an already-buffed target requires a NEW cast's evidence — the expiration changing (refresh) or a detected press (`instantPressDetected`, SENT). The skip-ON path is unaffected (the step is skipped in `executeCurrentStep` before arming).
+21. **Per-class data files + catalog dispatch (v0.2 Mage support, 2026-08-25).** Class-specific data lives in separate files behind a registry — editing Mage never touches Warlock: `Data/WarlockWorkflows.lua` (spells/equipItems/stoneRanks/defaultDefinitions) and `Data/MageWorkflows.lua` (spells/conjuredRanks/defaultDefinitions), registered in `Data/Workflows.lua` via `ACP.Data.classWorkflows(englishClass)` (with `activeClassWorkflows()` / `rankedCreates(data)` helpers). The static-catalog extension calls route through `ClassCatalogDispatch` (registry `extenders = { WARLOCK = ..., MAGE = ... }`; `merge`/`addStaticFallback` no-op for unknown classes); `WarlockCatalogExtender` keeps its name/behavior (gains a thin `merge` alias). Generic defaults (`DefaultSettings.workflows.definitions = {}`) are filled per class at login by `SettingsMigrator:applyClassDefaults`. **Module rule:** `UnitClass` must be read at CALL time (never captured at file scope) — `TradePlanner` had a file-scope capture that blocked the per-class mapping. **Verified data (Questie tbcItemDB + Warcraft Wiki + user):** Conjure Food 33717 → Conjured Croissant 22019 (NOT the Manna Biscuit 34062 — that comes from the Ritual of Refreshment table), Conjure Water 27090 → Conjured Glacier Water 22018, both 10 per cast; Ritual of Refreshment 43987 is a Summon Object (no bag item); Molten Armor = 30482, Invisibility = 66, Ice Armor = 27124. Mage autotrade count targets are trigger thresholds: `items.food.count`/`items.water.count` default 20 (slider 10–60 step 10 via `Data/Items.countRanges`); `DeliveryController:itemsReady` requires ALL enabled categories (food AND water) — the Warlock single-category behavior is unchanged. Conjure steps are count-target goal-met (`WorkflowItemSteps:isItemAlreadyPresent` via the rank entry's `category` → `Items:settingsKeyFor`; Warlock stones map to `items.healthstone.count = 1` ≈ the old "any present"). **Low-rank resolution hardened (round 2):** `WorkflowEngine:resolveCastInfo` resolves ranked families (stone/conjure) from the STATIC rank table (IsPlayerSpell per candidate rank, highest known wins) — never from the runtime catalog, which is empty until PLAYER_LOGIN and was the recurring failure point for low-rank steps (Warlock "only rank 6 works").
 
 ---
 
@@ -595,8 +648,8 @@ Full gotcha list: repo memory `arena-chill-prep-tests.md`.
 
 ---
 
-## 6. Future expansion (not in v0.1)
+## 6. Future expansion (not in v0.2)
 
-- **v0.2:** Mage — food/water (`food`/`water` categories, same `Inventory` → `DeliveryController` → `TradeManager` pipeline).
-- **v0.3:** multiple partners (trade queue in 3v3/5v5), auto-crafting (cast the spell if enabled), "best available rank" selection instead of a fixed one.
+- **v0.2:** Mage — food/water (`food`/`water` categories, same `Inventory` → `DeliveryController` → `TradeManager` pipeline). — **IMPLEMENTED (2026-08-25).**
+- **v0.3:** multiple partners (trade queue in 3v3/5v5), auto-crafting (cast the spell if enabled), "best available rank" selection instead of a fixed one, more classes (hunter arrows/ammo, etc. via the `classItems`/`classWorkflows` registries).
 - **v1.0:** profiles, multilingual UI (en/ru), CurseForge/Wago release.

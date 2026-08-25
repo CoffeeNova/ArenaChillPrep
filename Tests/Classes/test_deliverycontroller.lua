@@ -37,6 +37,27 @@ local function restoreStubs()
     _G.InitiateTrade = OrigInitiateTrade;
 end
 
+local function installBags(fake)
+    _G.__stub.bags = fake;
+    local fakeSlots = function(bag)
+        return fake[bag] and #fake[bag] or 0;
+    end;
+    local fakeInfo = function(bag, slot)
+        local e = fake[bag] and fake[bag][slot];
+        if (not e) then return nil; end
+        return {
+            iconFileID = nil, stackCount = e.stackCount, isLocked = false,
+            quality = 0, isReadable = false, hasLoot = false, hyperlink = nil,
+            isFiltered = false, hasNoValue = false, itemID = e.itemID,
+            isBound = e.bound,
+        };
+    end;
+    _G.GetContainerNumSlots = fakeSlots;
+    _G.GetContainerItemInfo = fakeInfo;
+    _G.C_Container.GetContainerNumSlots = fakeSlots;
+    _G.C_Container.GetContainerItemInfo = fakeInfo;
+end
+
 local function resetController()
     DC:reset();
     H.SyncTimers.Handles = {};
@@ -158,6 +179,111 @@ function testItemsReadyDisabled()
     -- Assert
     lu.assertIsFalse(ready);
     ACP.Settings:set("items.healthstone.enabled", true);
+end
+
+function testItemsReadyMageFoodWater()
+    -- A Mage is ready only when BOTH the food AND the water categories have
+    -- their count targets met (settingsKeyFor maps food → food, water → water).
+    local origUnitClass = _G.UnitClass;
+    _G.UnitClass = function() return "Mage", "MAGE" end;
+    State.Counts = { [22019] = 20, [22018] = 20 };
+    ACP.Settings:set("items.food.enabled", true);
+    ACP.Settings:set("items.food.count", 20);
+    ACP.Settings:set("items.water.enabled", true);
+    ACP.Settings:set("items.water.count", 20);
+    installStubs();
+
+    local ready = DC:itemsReady();
+
+    State.Counts[22018] = 10;
+    installStubs();
+    local belowThreshold = DC:itemsReady();
+
+    _G.UnitClass = origUnitClass;
+
+    lu.assertIsTrue(ready, "20 food + 20 water ready");
+    lu.assertIsFalse(belowThreshold, "10 water below the threshold");
+end
+
+function testItemsReadyMageRoguePartnerFoodOnly()
+    -- A Rogue partner receives food only: water readiness is not required
+    -- (water may be missing or below the threshold and the trade still goes).
+    local origUnitClass = _G.UnitClass;
+    _G.UnitClass = function(unit)
+        if (unit == "player") then return "Mage", "MAGE"; end
+        return "Rogue", "ROGUE";
+    end;
+    State.Counts = { [22019] = 20, [22018] = 0 };
+    ACP.Settings:set("items.food.enabled", true);
+    ACP.Settings:set("items.food.count", 20);
+    ACP.Settings:set("items.water.enabled", true);
+    ACP.Settings:set("items.water.count", 20);
+    installStubs();
+
+    local ready = DC:itemsReady("party1");
+
+    State.Counts[22019] = 10;
+    installStubs();
+    local foodBelowThreshold = DC:itemsReady("party1");
+
+    _G.UnitClass = origUnitClass;
+
+    lu.assertIsTrue(ready, "food ready + no water is ready for a Rogue partner");
+    lu.assertIsFalse(foodBelowThreshold, "10 food is below the threshold");
+end
+
+function testItemsReadyMageManaPartnerNeedsBoth()
+    local origUnitClass = _G.UnitClass;
+    _G.UnitClass = function(unit)
+        if (unit == "player") then return "Mage", "MAGE"; end
+        return "Priest", "PRIEST";
+    end;
+    State.Counts = { [22019] = 20, [22018] = 20 };
+    ACP.Settings:set("items.food.enabled", true);
+    ACP.Settings:set("items.food.count", 20);
+    ACP.Settings:set("items.water.enabled", true);
+    ACP.Settings:set("items.water.count", 20);
+    installStubs();
+
+    local ready = DC:itemsReady("party1");
+
+    State.Counts[22018] = 0;
+    installStubs();
+    local waterMissing = DC:itemsReady("party1");
+
+    _G.UnitClass = origUnitClass;
+
+    lu.assertIsTrue(ready, "20 food + 20 water ready for a mana partner");
+    lu.assertIsFalse(waterMissing, "a mana partner needs water too");
+end
+
+function testCheckReadyMageRoguePartnerSchedulesWithoutWater()
+    -- Full flow: a Mage with 20 food and NO water still auto-trades to a
+    -- Rogue partner (food only); a Priest partner would wait for water.
+    local origUnitClass = _G.UnitClass;
+    _G.UnitClass = function(unit)
+        if (unit == "player") then return "Mage", "MAGE"; end
+        return "Rogue", "ROGUE";
+    end;
+    State.PartyCount = 1;
+    State.Bracket = "2v2";
+    State.Remaining = 45;
+    State.BuffActive = true;
+    State.Counts = { [22019] = 20, [22018] = 0 };
+    ACP.Settings:set("items.food.enabled", true);
+    ACP.Settings:set("items.food.count", 20);
+    ACP.Settings:set("items.water.enabled", true);
+    ACP.Settings:set("items.water.count", 20);
+    installStubs();
+    resetController();
+
+    DC:onBuffGained();
+
+    local scheduled = H.hasTimer("TradeDelay");
+    _G.UnitClass = origUnitClass;
+
+    lu.assertEquals(DC.state, "ACTIVE");
+    lu.assertIsTrue(scheduled, "trade scheduled without water for a Rogue partner");
 end
 
 function testFindPartner()
@@ -625,13 +751,19 @@ function testOnTradeOpenedInbound()
     resetController();
     DC:setState("ACTIVE");
     ACP.TradeManager.partnerUnit = "Alice";
+    _G.UnitName = function(unit)
+        if (unit == "party1") then return "Alice"; end
+        return "Player";
+    end;
     H.SyncTimers.Handles["TradeDelay"] = { cb = function() end };
     -- Act
     DC:onTradeOpened("Alice");
-    -- Assert
-    lu.assertEquals(DC.currentPartner, "Alice");
+    -- Assert: the NAME is normalized to the party token (per-partner class
+    -- filters read UnitClass(unit)).
+    lu.assertEquals(DC.currentPartner, "party1");
     lu.assertEquals(DC.state, "TRADING");
     lu.assertIsFalse(H.hasTimer("TradeDelay"));
+    _G.UnitName = function() return "Player" end;
 end
 
 function testOnItemsChangedTradingRefillsQueue()
@@ -647,16 +779,13 @@ function testOnItemsChangedTradingRefillsQueue()
     _G.__stub.tradeFrameShown = true;
     ACP.Settings:set("items.healthstone.enabled", true);
     ACP.Settings:set("items.healthstone.count", 1);
-    local origGetCount = ACP.Inventory.getCount;
-    ACP.Inventory.getCount = function(_, itemID)
-        if (itemID == 22105) then return 1; end
-        return 0;
-    end;
+    installBags({
+        [0] = { { itemID = 22105, stackCount = 1, bound = false } },
+    });
     -- Act
     DC:onItemsChanged();
     -- Assert
     lu.assertEquals(#ACP.TradeManager.ItemsToAdd, 1);
-    ACP.Inventory.getCount = origGetCount;
     _G.__stub.tradeFrameShown = false;
 end
 

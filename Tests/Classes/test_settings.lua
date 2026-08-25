@@ -241,6 +241,66 @@ function testMigrateWorkflowNamesReplacesPlaceholderNames()
     lu.assertEquals(workflows.definitions[3].name, "Keep Me");
 end
 
+function testApplyClassDefaultsFillsEmptyDefinitions()
+    -- A fresh Warlock: empty definitions are filled from the class defaults
+    -- (deep-copied — mutating the copy never touches the class data).
+    local workflows = { enabled = true, slotCount = 5, definitions = {} };
+
+    ACP.SettingsMigrator:applyClassDefaults(workflows, "WARLOCK");
+
+    lu.assertEquals(workflows.definitions[1].name, "2s with sacrifice");
+    lu.assertEquals(#workflows.definitions[1].steps, 19);
+    lu.assertNotIsNil(workflows.definitions[5]);
+    lu.assertIsNil(workflows.definitions[6]);
+
+    workflows.definitions[1].name = "edited";
+    lu.assertEquals(ACP.Data.WarlockWorkflows.defaultDefinitions[1].name, "2s with sacrifice");
+end
+
+function testApplyClassDefaultsMageFillsMageDefaults()
+    local workflows = { definitions = {} };
+
+    ACP.SettingsMigrator:applyClassDefaults(workflows, "MAGE");
+
+    lu.assertEquals(workflows.definitions[1].name, "2s standard");
+    lu.assertEquals(workflows.definitions[1].steps[1].spellID, 27090);
+    lu.assertIsNil(workflows.definitions[6]);
+end
+
+function testApplyClassDefaultsKeepsExistingDefinitions()
+    -- A returning character with saved definitions must never be overwritten.
+    local workflows = { definitions = { [1] = { enabled = true, name = "mine", steps = {} } } };
+
+    ACP.SettingsMigrator:applyClassDefaults(workflows, "WARLOCK");
+
+    lu.assertEquals(workflows.definitions[1].name, "mine");
+    lu.assertIsNil(workflows.definitions[2]);
+end
+
+function testApplyClassDefaultsUnknownClassNoop()
+    local workflows = { definitions = {} };
+
+    ACP.SettingsMigrator:applyClassDefaults(workflows, nil);
+    lu.assertIsNil(next(workflows.definitions));
+
+    ACP.SettingsMigrator:applyClassDefaults(workflows, "HUNTER");
+    lu.assertIsNil(next(workflows.definitions));
+end
+
+function testInitFillsClassDefaultsOnFreshCharacter()
+    -- A fresh character (no saved workflows) gets the active class's default
+    -- definitions at init (the default stub is a Warlock).
+    _G.ArenaChillPrepCharDB = nil;
+    _G.ArenaChillPrepDB = H.deepCopy(PristineDefaults);
+    Settings._initialized = false;
+
+    Settings:_init();
+
+    lu.assertEquals(Settings:get("workflows.definitions.1.name"), "2s with sacrifice");
+    lu.assertNotIsNil(Settings:get("workflows.definitions.5"));
+    freshSettings();
+end
+
 -- Restore pure defaults after the suite so later suites see a clean DB.
 function teardownSuite()
     freshSettings();

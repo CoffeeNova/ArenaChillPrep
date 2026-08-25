@@ -3,7 +3,7 @@
 > Source of truth: this directory (`.ai/`). Entry point: `AGENTS.md` at the repo root.
 > This file is the main source of context when working on the addon. **Read `ARCHITECTURE.md` before changing any code.**
 
-**Current status:** v0.1 in development — Warlock only (Soulstones of all ranks).
+**Current status:** v0.2 in development — Warlock (healthstones) + Mage (food/water). The Mage support (2026-08-25) is implemented and test-green; in-game verification on a Mage is pending user testing. v0.3 (2026-08-26): Mage autotrade is partner-class-aware (water only for mana-using partners) and the placement queue is per-stack.
 
 ---
 
@@ -63,9 +63,14 @@ ArenaChillPrep/
 │   └── ARCHITECTURE.md       # Architecture: modules, data flow, state machine
 ├── Data/                     # Static data
 │   ├── Constants.lua         # Buff ID, constants, timings, bracket size map
-│   ├── Items.lua             # Item catalog (healthstones + soulstones) + class → items mapping
-│   ├── DefaultSettings.lua   # SavedVariables defaults
-│   └── Localization.lua      # Strings (enUS / ruRU)
+│   ├── Items.lua             # Item catalog (healthstones/soulstones/food/water) +
+│   │                         #   class → items mapping + settingsKeyFor/countRanges
+│   ├── DefaultSettings.lua   # SavedVariables defaults (definitions are per-class)
+│   ├── Localization.lua      # Strings (enUS / ruRU)
+│   ├── WarlockWorkflows.lua  # Warlock catalog: spells/equipItems/stoneRanks/defaultDefinitions
+│   ├── MageWorkflows.lua     # Mage catalog: spells/conjuredRanks/defaultDefinitions
+│   └── Workflows.lua         # Generic schema: targets/validateStep/getEquipItem +
+│                             #   ACP.Data.classWorkflows(englishClass) registry
 ├── Classes/                  # Service modules
 │   ├── Events.lua            # Event frame wrapper
 │   ├── ArenaPrep.lua         # Prep buff detection, bracket detection, remaining time
@@ -74,17 +79,20 @@ ArenaChillPrep/
 │   ├── TradeManager.lua      # Low-level trade window automation (dependency-free)
 │   ├── TradePlanner.lua      # WHAT to pass: queue building + rank grouping (Settings/Data/Inventory)
 │   ├── Settings.lua          # SavedVariables wrapper (dot-path store)
-│   ├── SettingsMigrator.lua  # Migration/normalization pipeline (names/IDs/placeholders/rank keys)
+│   ├── SettingsMigrator.lua  # Migration/normalization pipeline (names/IDs/placeholders/
+│   │                         #   rank keys + applyClassDefaults)
 │   ├── WorkflowRepository.lua# Workflow CRUD + step factory + settings paths
 │   ├── WorkflowKeybindController.lua # Slot key I/O: SetBinding/SaveBindings/conflict-steal/delete-shift
 │   ├── WorkflowSpellbook.lua # FACADE: static-catalog rebuild + delegates
 │   ├── SpellbookCatalogBuilder.lua # Catalog assembly + rank metadata + reads
-│   ├── WarlockCatalogExtender.lua  # Class-gated static fallback + pet/stone extras
-│   ├── SpellbookLabels.lua   # stoneStepLabel
+│   ├── WarlockCatalogExtender.lua  # Warlock class-gated static fallback + pet/stone extras
+│   ├── MageCatalogExtender.lua     # Mage class-gated static fallback + conjured ranks
+│   ├── ClassCatalogDispatch.lua    # Routes catalog calls to the ACTIVE class's extender
+│   ├── SpellbookLabels.lua   # stoneStepLabel (active class's rank table)
 │   ├── WorkflowEngine.lua    # Core state machine + STEP_DISPATCH handler table + delegates
 │   ├── WorkflowCastController.lua # Player-cast steps + UNIT_SPELLCAST_* events
 │   ├── PetAbilityCaster.lua  # Pet steps + PostClick press handling
-│   ├── WorkflowItemSteps.lua # createItem/equipItem + item waits
+│   ├── WorkflowItemSteps.lua # createItem/equipItem + item waits (count-target goal-met)
 │   ├── WorkflowBindings.lua  # Key Bindings menu entries + secure buttons + bindings
 │   ├── StateMachine.lua      # Mixin: init-once guard + validated setState
 │   ├── Preconditions.lua     # Shared readiness gates for both orchestrators
@@ -93,7 +101,7 @@ ArenaChillPrep/
 │   │   │                     #   Checkbox/Slider/Button/StatusLine/Dropdown/TextInput/
 │   │   │                     #   ScrollFrame + geometry constants)
 │   │   └── WorkflowUI.lua    # "Workflows" subcategory content — pure layout/render
-│   │   └── Welcome.lua       # First-run welcome popup (Warlock-only, once per account)
+│   │   └── Welcome.lua       # First-run welcome popup (Warlock/Mage, once per account)
 │   └── OptionsUI.lua         # Interface Options panel + /acp slash command
 └── Utils/                    # Utilities
     ├── Items.lua             # Item helpers (find by ID, counters, bag search)
@@ -179,6 +187,11 @@ The addon has an automated unit-test suite in `Tests/` that runs under **LuaJIT*
 - `C_Container.GetContainerItemInfo` returns a TABLE; the legacy global returns the 11-value tuple — stubs must provide both.
 - `Utils/Items` prefers the GLOBAL `GetContainerNumSlots` but `C_Container` for `GetContainerItemInfo` — override all four container functions in bag stubs.
 - **New suites must be added to the `suites` list in `Tests/run_tests.lua`** — luaunit only runs suites it lists; an unlisted (but committed) suite silently never executes, so a broken module can pass the suite.
+- **luacov coverage is only trustworthy on a CLEAN stats file** — a crashed/pipe-killed run leaves `Tests/luacov.stats.out` behind and luacov MERGES it into the next run (cumulative hits inflate the number; "94%" was once measured while a clean run measured 83%). `run_tests.lua` deletes the stats file before init; always judge coverage from a fresh `.\Tests\run-tests.ps1` run.
+- **LuaJIT line hooks miss the LAST field of a multi-line table constructor** — data files written step-per-line (`spellID = 688` as its own line) leave those lines permanently "uncovered". Write data steps as single-line tables (see `Data/WarlockWorkflows.lua`).
+- **Event-driven engine tests must force `Engine._initialized = false` before `Engine:_init()`** — `H.resetAll()` wipes the event bus, and the engine's WCC/WIS/Bindings listeners need re-registering or cast events fire into the void.
+- **`H.reloadModule` on a stateful module replaces the global table** — restore `ACP.<Module>` afterwards (the reloaded table has no registered event handlers); see `testResolveCastInfoAvailableImmediatelyAfterLoad`.
+- **Pin `_G.__stub.time` in timing tests** — earlier suites advance it (countdown/retry tests), so `start >= stepStart`-style comparisons silently fail.
 - **`if (pcall(fn, ...)) then` is a bug** — `pcall` returns `(ok, result)`; an `if` only sees the first value (`ok`), so the branch fires whenever `fn` is callable regardless of its result. Capture the result: `local ok, res = pcall(fn, ...); if (ok and res) then`.
 - **A `function X:y()` written inside another method body is valid Lua** (it assigns `X.y` at runtime, not at load) and passes syntax-check; the method stays `nil` until that outer method executes. Keep all methods top-level.
 
@@ -235,17 +248,30 @@ Gargul (same workspace) already implements exactly this flow — opening a trade
 | `/acp status` | Show current state (buff active, **bracket**, items found, partner) |
 | `/acp debug` | Toggle verbose logging |
 
-**Class gating (Warlock only).** The addon fully works for Warlocks only. For
-any other class the `/acp` settings panel renders a **single** "Compatibility"
-page (no General/Workflows/Autotrade subcategories) that explains the addon is
-Warlock-only and invites the player to reroll. Every sub-command
-(`/acp status`, `enable`, `disable`, `debug`, …) — i.e. anything but bare
-`/acp` — prints the same incompatibility message to chat instead of running.
-Gating lives in `Classes/OptionsUI.lua` (`isSupportedClass`,
-`getCompatibilityMessage`, `buildCompatibility`) and the `SlashCmdList["ACP"]`
-handler; the strings are `L.compatSection` / `L.compatMessage`. Rogues get a
-special demon-flavored line (`L.compatMessageRogue`): "Reroll to Warlock, you
-insignificant wretch!" (pure Warcraft lore — demons talk like that).
+**Class gating (Warlock + Mage).** The addon fully works for Warlocks and
+Mages. For any other class the `/acp` settings panel renders a **single**
+"Compatibility" page (no General/Workflows/Autotrade subcategories) that
+explains the addon supports only these two classes and invites the player to
+reroll. Every sub-command (`/acp status`, `enable`, `disable`, `debug`, …) —
+i.e. anything but bare `/acp` — prints the same incompatibility message to
+chat instead of running. Gating lives in `Classes/OptionsUI.lua`
+(`isSupportedClass` — accepts `CLASS_WARLOCK`/`CLASS_MAGE` from
+`Data/Constants.lua`, `getCompatibilityMessage`, `buildCompatibility`) and the
+`SlashCmdList["ACP"]` handler; the strings are `L.compatSection` /
+`L.compatMessage`. Rogues get a special demon-flavored line
+(`L.compatMessageRogue`): "Reroll to Warlock, you insignificant wretch!" (pure
+Warcraft lore — demons talk like that).
+
+**Class-specific data (v0.2).** Every class-specific piece lives in its own
+file behind `ACP.Data.classWorkflows(englishClass)` (the registry in
+`Data/Workflows.lua`): `Data/WarlockWorkflows.lua` (spells/equipItems/
+stoneRanks/defaultDefinitions) and `Data/MageWorkflows.lua`
+(spells/conjuredRanks/defaultDefinitions). The static catalog is dispatched to
+the active class's extender via `Classes/ClassCatalogDispatch.lua`
+(`WarlockCatalogExtender` / `MageCatalogExtender`); `WorkflowSpellbook:scan()`
+and its facade delegates route through it. Editing one class never touches the
+other. Module rule: read `UnitClass` at CALL time (never capture it at file
+scope) — the class is unknown at ADDON_LOADED and tests override the stub.
 
 ---
 
@@ -309,7 +335,7 @@ subcategories (built with `Settings.RegisterCanvasLayoutSubcategory` — the leg
   actual panel size — no hardcoded offsets. Built by `Classes/UI/WorkflowUI.lua` and
   `Classes/WorkflowSpellbook.lua`
   (`ACP.WorkflowUI`); all edits write to Settings immediately.
-- **Autotrade** — two columns: left = bracket checkboxes (2v2 active; 3v3/5v5 permanently disabled) + timing sliders with a header divider between them; right = rank checkboxes.
+- **Autotrade** — two columns: left = bracket checkboxes (2v2 active; 3v3/5v5 permanently disabled) + timing sliders with a header divider between them; right = rank checkboxes stacked per category (a vertical cursor — a Mage shows food AND water rows) + per-category **count sliders** below them for categories with a `Data/Items.countRanges` entry (Mage food/water: "Food/Water to await", 10–60 step 10, default 20; Warlock healthstone has a fixed count — no slider).
 - Every control has a tooltip; all strings go through `Data/Localization.lua`. Turning the
   master switch off grays out all Autotrade controls; turning the workflow engine off shows
   a status warning + an "Enable workflow engine" CTA on the Workflows tab (controls stay
@@ -331,14 +357,40 @@ ArenaChillPrepDB = {
         ["5v5"] = false,
     },
     items = {
-        soulstone = {
-            enabled = true,  -- pass soulstones
+        healthstone = {
+            enabled = true,  -- pass healthstones
             count   = 1,     -- how many per trade
-            ranks   = { [22103] = true }, -- which ranks to consider (by itemID)
+            ranks   = { [19012] = true, [19013] = true, [22105] = true }, -- by itemID
+        },
+        food = {             -- Mage: Conjured Croissant (22019)
+            enabled = true,
+            count   = 20,    -- trigger threshold (trade once 20 are in bags)
+            ranks   = { [22019] = true },
+        },
+        water = {            -- Mage: Conjured Glacier Water (22018)
+            enabled = true,
+            count   = 20,
+            ranks   = { [22018] = true },
         },
     },
 }
 ```
+
+For a **Mage**, the autotrade analyzes the PARTNER's class before trading
+(v0.3): mana-using partners (Priest/Paladin/Warlock/Druid/Hunter/Shaman —
+`Data/Items.magePartnerCategories`) receive BOTH food AND water; Rogues and
+Warriors receive food only (conjured water is useless to them and stays in
+the bags — it also never blocks the trade, `itemsReady(partner)` only
+requires the categories that partner will receive). Partners of unlisted
+classes receive everything. Warlock autotrade is untouched: healthstones go
+to every partner. `count` is a **trigger threshold**, not a per-trade
+placement number. The placement queue holds **one entry per bag stack**
+(`Utils/Items:findItemSlots`) because the client moves a whole stack per
+`UseContainerItem` — the old per-item queue (20 entries per category) left
+the water in the bags for ~3 s of no-op ticks while the player accepted the
+food-only trade (live-reported 2026-08-26).
+The per-category slider ranges live in `Data/Items.countRanges` (food/water:
+10–60 step 10); Warlock healthstone has no slider (fixed count 1).
 
 `Settings:reset()` restores a deep copy of `ACP.Data.DefaultSettings` and re-syncs the panel.
 Account-wide settings remain in `ArenaChillPrepDB`; workflow settings are routed through
@@ -347,15 +399,18 @@ Account-wide settings remain in `ArenaChillPrepDB`; workflow settings are routed
 slots are created empty. `WORKFLOW_MAX_SLOTS` is the fixed binding capacity, while the UI
 only renders slots up to the current character's `slotCount`.
 
+
 ### First-run welcome popup (2026-08-25)
 
 On `PLAYER_LOGIN`, if `welcomeSeen` is falsy (fresh install **or** first login after an
-update — the flag defaults to `false` and is deep-merged) and the character is a Warlock,
-`ACP.Welcome` (Classes/UI/Welcome.lua) shows a centered popup: the addon icon
-(`Interface\AddOns\ArenaChillPrep\Textures\icon.tga`, 128×128), the title, two very short
-feature lines and two buttons. **Non-Warlocks never see the popup** (the addon is
-Warlock-only — their flow is the Compatibility page). Text is deliberately minimal (see
-`Data/Localization.lua` `welcomeLine1/2`, `welcomeCta`, `welcomeLater`).
+update — the flag defaults to `false` and is deep-merged) and the character is a supported
+class (Warlock or Mage), `ACP.Welcome` (Classes/UI/Welcome.lua) shows a centered popup:
+the addon icon (`Interface\AddOns\ArenaChillPrep\Textures\icon.tga`, 128×128), the title,
+two very short class-conditional feature lines (`L.welcomeLine1/2` for Warlocks,
+`L.welcomeLine1Mage/2Mage` — "Auto-trades food and water to your partner." — for Mages)
+and two buttons. **Unsupported classes never see the popup** (their flow is the
+Compatibility page). Text is deliberately minimal (see `Data/Localization.lua`
+`welcomeLine1/2`, `welcomeCta`, `welcomeLater`).
 
 - **CTA ("Set up key")** dismisses the popup (sets `welcomeSeen = true`), opens the
   Interface Options panel on the **Workflows** subcategory (`OptionsUI:openPanel("Workflows")`)
@@ -382,6 +437,6 @@ Warlock-only — their flow is the Compatibility page). Text is deliberately min
 The workflows branch merges **per-slot replace** (a saved `definitions[N]` wins wholesale —
 deepMerge would index-merge the steps arrays into hybrids), `ensureDefaults` is array-aware,
 and saved definitions that still match the OLD placeholder defaults exactly are replaced by
-the current default workflows (slots 1-5, the author's five battle-tested Warlock prep
+the Warlock class defaults (slots 1-5, the author's five battle-tested Warlock prep
 workflows) on load (user edits are never touched).
 `Utils/Tables` provides `deepCopy`/`deepMerge`/`shallowCopy`.

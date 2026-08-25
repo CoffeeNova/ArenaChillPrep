@@ -29,13 +29,19 @@ function WarlockCatalogExtender:isWarlock()
 end
 
 ---@param spellbook table
+function WarlockCatalogExtender:merge(spellbook)
+    return self:mergeStaticWarlock(spellbook);
+end
+
+---@param spellbook table
 function WarlockCatalogExtender:mergeStaticWarlock(spellbook)
     if (not self:isWarlock()) then
         return;
     end
 
-    local spells = ACP.Data.Workflows and ACP.Data.Workflows.spells;
-    local stoneRanks = ACP.Data.Workflows and ACP.Data.Workflows.stoneRanks;
+    local data = ACP.Data.classWorkflows(CLASS_WARLOCK);
+    local spells = data and data.spells;
+    local stoneRanks = ACP.Data.Workflows and ACP.Data.Workflows:rankedCreates(data);
 
     if (spells) then
         for category, list in pairs(spells) do
@@ -83,7 +89,8 @@ function WarlockCatalogExtender:addStaticFallback(spellbook)
         return;
     end
 
-    local spells = ACP.Data.Workflows and ACP.Data.Workflows.spells;
+    local data = ACP.Data.classWorkflows(CLASS_WARLOCK);
+    local spells = data and data.spells;
 
     if (not spells) then
         return;

@@ -91,21 +91,27 @@ function DeliveryController:categoryReady(category, setting)
     return ACP.TradePlanner:categoryReady(category, setting);
 end
 
---- Whether an enabled item category has every selected rank ready.
---- The settings key is the SINGULAR category name (items.healthstone) while
---- the catalog key is the PLURAL (healthstones) — map plural → singular.
+--- Whether every enabled item category the PARTNER should receive has ALL
+--- its selected ranks ready. `partnerUnit` picks the per-partner categories
+--- (a Mage gives water only to mana-using partners — see
+--- TradePlanner:categoriesForPartner); nil means every category of the class
+--- (a Warlock has a single category, so its behavior is unchanged).
+---@param partnerUnit string|nil
 ---@return boolean
-function DeliveryController:itemsReady()
-    local categories = self:getCategories();
+function DeliveryController:itemsReady(partnerUnit)
+    local categories = ACP.TradePlanner:categoriesForPartner(partnerUnit);
+    local anyEnabled = false;
 
     for _, category in ipairs(categories) do
-        -- "healthstones" -> "healthstone"
-        local settingsKey = category:sub(1, -2);
+        local settingsKey = ACP.Data.Items:settingsKeyFor(category);
         local setting = ACP.Settings:get("items." .. settingsKey);
 
         if (setting and setting.enabled) then
-            if (self:categoryReady(category, setting)) then
-                return true;
+            anyEnabled = true;
+
+            if (not self:categoryReady(category, setting)) then
+                ACP:debugPrint("itemsReady: category=%s not ready yet", category);
+                return false;
             end
         else
             ACP:debugPrint("itemsReady: category=%s setting %s missing or disabled",
@@ -113,7 +119,7 @@ function DeliveryController:itemsReady()
         end
     end
 
-    return false;
+    return anyEnabled;
 end
 
 --- First eligible partner: the first party member who isn't the player and
@@ -221,22 +227,22 @@ function DeliveryController:checkReady()
         return;
     end
 
-    if (not self:itemsReady()) then
-        return;
-    end
-
+    -- The partner decides the readiness (a Mage gives water only to
+    -- mana-using partner classes), so it is determined before itemsReady.
     local partner = self:findPartner();
 
     if (not partner) then
-        local served = self:givenCount();
-
-        if (served > 0) then
-            ACP:debugPrint("no eligible partner (givenTo: %d)", served);
+        if (self:givenCount() > 0) then
+            ACP:debugPrint("no eligible partner (givenTo: %d)", self:givenCount());
             self:setState(DS.DONE);
-        else
+        elseif (self:itemsReady()) then
             ACP:debugPrint("items ready but no partner found (are you in a group?)");
         end
 
+        return;
+    end
+
+    if (not self:itemsReady(partner)) then
         return;
     end
 
@@ -253,7 +259,7 @@ function DeliveryController:checkReady()
             return;
         end
 
-        if (not self:itemsReady()) then
+        if (not self:itemsReady(partner)) then
             return;
         end
 
@@ -331,11 +337,17 @@ function DeliveryController:onTradeOpened(partner)
         self.currentPartner = partner;
     end
 
+    -- Normalize a NAME (inbound trade) to a party token so the per-partner
+    -- class filters can read UnitClass(unit).
+    if (self.currentPartner and not self.currentPartner:match("^party%d+$")) then
+        self.currentPartner = ACP.ArenaPrep:findPartyUnitByName(self.currentPartner) or self.currentPartner;
+    end
+
     if (self.state == DS.ACTIVE) then
         self:setState(DS.TRADING);
     end
 
-    ACP.TradeManager:queueItems(ACP.TradePlanner:buildQueue());
+    ACP.TradeManager:queueItems(ACP.TradePlanner:buildQueue(self.currentPartner));
 end
 
 --- Every-tick readiness poll while ACTIVE (safety net for events that may be
@@ -390,7 +402,7 @@ function DeliveryController:onItemsChanged()
         -- Items became ready mid-trade (e.g. crafted while the window was open,
         -- including an inbound trade we took over): refresh the placement queue
         -- so they get delivered into the already-open window too.
-        ACP.TradeManager:queueItems(ACP.TradePlanner:buildQueue());
+        ACP.TradeManager:queueItems(ACP.TradePlanner:buildQueue(self.currentPartner));
     end
 end
 

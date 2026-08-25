@@ -208,7 +208,8 @@ function WorkflowEngine:getCatalogEntry(spellID)
         end
     end
 
-    local spells = ACP.Data.Workflows and ACP.Data.Workflows.spells;
+    local data = ACP.Data.activeClassWorkflows();
+    local spells = data and data.spells;
 
     if (not spells) then
         return nil;
@@ -228,6 +229,9 @@ end
 --- Spell a step actually casts (and the item it will create): the stored rank
 --- verbatim when castable, else the highest KNOWN rank of its family. On
 --- 20506 a trained higher rank replaces the lower one in the spellbook.
+--- Ranked families (stone/conjure) resolve from the STATIC rank table — never
+--- from the runtime catalog — so a low-rank step can never break on a
+--- catalog-rebuild issue.
 ---@param step table
 ---@return number castSpellID
 ---@return number castItemID
@@ -239,12 +243,25 @@ function WorkflowEngine:resolveCastInfo(step)
         return spellID, step.itemID or (self:getCatalogEntry(spellID) and self:getCatalogEntry(spellID).itemID) or spellID;
     end
 
-    local stone = ACP.Data.Workflows and ACP.Data.Workflows.stoneRanks
-        and ACP.Data.Workflows.stoneRanks[spellID];
-    local familyName = (stone and stone.spellName) or self:spellName(spellID);
+    local rankTable = ACP.Data.Workflows and ACP.Data.Workflows:activeRankTable();
+    local rankEntry = rankTable and rankTable[spellID];
+    local familyName = (rankEntry and rankEntry.spellName) or self:spellName(spellID);
 
-    local highest = (familyName and familyName:sub(1, 1) ~= "#" and ACP.WorkflowSpellbook)
-        and ACP.WorkflowSpellbook:getHighestKnownRank(familyName) or nil;
+    local highest = nil;
+
+    if (rankTable and rankEntry and familyName:sub(1, 1) ~= "#") then
+        for _, candidate in pairs(rankTable) do
+            if (candidate.spellName == familyName) then
+                local knownRank, isKnown = pcall(IsPlayerSpell, candidate.spellID);
+
+                if (knownRank and isKnown and (not highest or candidate.rank > highest.rank)) then
+                    highest = candidate;
+                end
+            end
+        end
+    elseif (familyName:sub(1, 1) ~= "#" and ACP.WorkflowSpellbook) then
+        highest = ACP.WorkflowSpellbook:getHighestKnownRank(familyName);
+    end
 
     if (highest) then
         return highest.spellID, highest.itemID or step.itemID;
@@ -356,7 +373,8 @@ end
 ---@param spellID number
 ---@return number|nil
 function WorkflowEngine:getPetEntry(spellID)
-    local spells = ACP.Data.Workflows and ACP.Data.Workflows.spells;
+    local data = ACP.Data.activeClassWorkflows();
+    local spells = data and data.spells;
 
     if (not spells) then
         return nil;

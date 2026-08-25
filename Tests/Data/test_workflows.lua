@@ -1,6 +1,7 @@
 -- ArenaChillPrep — Tests/Data/test_workflows.lua
--- Covers Data/Workflows.lua: step schema validation (all step types,
--- including equipItem) and the equippable-item catalog.
+-- Covers Data/Workflows.lua: the generic step schema validator and the
+-- class-gated static-catalog rebuild (Warlock catalog data lives in
+-- test_warlockworkflows.lua, Mage in test_mageworkflows.lua).
 
 local ACP = _G.ACP;
 local W = ACP.Data.Workflows;
@@ -127,6 +128,7 @@ end
 
 function testValidateToleratesLegacySkipFlag()
     -- The per-step skipIfBuffed flag was REMOVED (2026-08-25) — saved data may
+    -- still carry it and must stay valid.
     local step = { type = "cast", spellID = 5697, skipIfBuffed = "yes" };
     -- Act
     local ok, err = W:validateStep(step);
@@ -165,131 +167,52 @@ function testValidatePetStepRequiresSpellID()
     lu.assertStrContains(err, "spellID");
 end
 
-function testStoneRanksHealthstone()
-    -- Arrange
-    local count = 0;
-    for _ in pairs(W.stoneRanks) do count = count + 1; end
-
-    -- Assert: 6 healthstone ranks + Create Spellstone rank 4 only (ranks 1-3
-    -- were REMOVED 2026-08-25 — no arena use, live tests showed ranks 2-3
-    -- upgrade to Master anyway).
-    lu.assertEquals(count, 7);
-    lu.assertEquals(W.stoneRanks[27230].itemName, "Master Healthstone");
-    lu.assertEquals(W.stoneRanks[11730].itemName, "Major Healthstone");
-    lu.assertEquals(W.stoneRanks[28172].itemName, "Master Spellstone");
-    lu.assertNil(W.stoneRanks[2362], "Create Spellstone rank 1 removed");
-    lu.assertNil(W.stoneRanks[28171], "Create Spellstone rank 2 removed");
-    lu.assertNil(W.stoneRanks[28173], "Create Spellstone rank 3 removed");
-end
-
-function testStoneRanksCarryVariantPairs()
-    -- Healthstone ranks 1-5 are historical ID pairs (the client conjures one
-    -- variant per rank — rank 5 -> 19013, live-verified); rank 6 and the
-    -- spellstone ranks are single IDs.
-    lu.assertEquals(#W.stoneRanks[6201].itemIDs, 2);
-    lu.assertEquals(W.stoneRanks[6201].itemIDs[1], 19004);
-    lu.assertEquals(W.stoneRanks[6201].itemIDs[2], 19005);
-    lu.assertEquals(#W.stoneRanks[11730].itemIDs, 2);
-    lu.assertEquals(W.stoneRanks[11730].itemIDs[1], 19012);
-    lu.assertEquals(W.stoneRanks[11730].itemIDs[2], 19013);
-    lu.assertEquals(#W.stoneRanks[27230].itemIDs, 1);
-    lu.assertEquals(W.stoneRanks[27230].itemIDs[1], 22105);
-    lu.assertEquals(#W.stoneRanks[28172].itemIDs, 1);
-    lu.assertEquals(W.stoneRanks[28172].itemIDs[1], 22646);
-end
-
-function testCreateItemCatalogRankOneExpectsMinorStone()
-    -- The rank-1 Create Healthstone catalog entry used to claim itemID 22105
-    -- (Master) — a rank-1 step without a stored itemID would then wait for the
-    -- wrong stone. It must expect Minor 19004.
-    local entry = nil;
-    for _, list in pairs(W.spells) do
-        for _, e in ipairs(list) do
-            if (e.spellID == 6201) then
-                entry = e;
-            end
-        end
-    end
-
-    lu.assertNotIsNil(entry);
-    lu.assertEquals(entry.itemID, 19004);
-end
-
-function testSoulLinkCatalogEntryUses19028()
-    -- 6307 is the IMP's Blood Pact passive, not Soul Link (verified against
-    local entry = nil;
-    for _, list in pairs(W.spells) do
-        for _, e in ipairs(list) do
-            if (e.name == "Soul Link") then
-                entry = e;
-            end
-        end
-    end
-
-    lu.assertNotIsNil(entry);
-    lu.assertEquals(entry.spellID, 19028);
-    lu.assertEquals(entry.buffSpellID, 19028);
-    lu.assertIsFalse(entry.canTargetParty);
-end
-
-function testDemonArmorCatalogEntryIsTbcMaxRank()
-    -- Demon Armor used to ship as rank 1 (706), which the 2.5.6 client
-    local entry = nil;
-    for _, list in pairs(W.spells) do
-        for _, e in ipairs(list) do
-            if (e.name == "Demon Armor") then
-                entry = e;
-            end
-        end
-    end
-
-    lu.assertNotIsNil(entry);
-    lu.assertEquals(entry.spellID, 27260);
-    lu.assertEquals(entry.buffSpellID, 27260);
-    lu.assertIsFalse(entry.canTargetParty);
-end
-
-function testRemovedSpellsAbsentFromCatalog()
-    -- Create Soulstone (693) and Ritual of Summoning (698) were REMOVED
-    -- (2026-08-25, user decision — no arena use / no such spell on this
-    -- client). No spell entry may reference them.
-    for _, list in pairs(W.spells) do
-        for _, e in ipairs(list) do
-            lu.assertNotEquals(e.spellID, 693, "Create Soulstone removed");
-            lu.assertNotEquals(e.spellID, 698, "Ritual of Summoning removed");
-        end
-    end
-end
-
-function testStoneRanksCreateStepLabel()
-    -- Arrange / Act / Assert: the rank is appended explicitly (GetSpellInfo
-    -- returns the unranked base name on 20506, so the catalog rank disambiguates).
-    lu.assertEquals(ACP.WorkflowSpellbook:stoneStepLabel(W.stoneRanks[6201]), "Create Healthstone (rank 1)");
-    lu.assertEquals(ACP.WorkflowSpellbook:stoneStepLabel(W.stoneRanks[11730]), "Create Healthstone (rank 5)");
-    lu.assertEquals(ACP.WorkflowSpellbook:stoneStepLabel(W.stoneRanks[27230]), "Create Healthstone (rank 6)");
-end
+-- ---- class-gated static fallback (dispatched per class) ----
 
 function testStaticFallbackGatedByClass()
-    -- Arrange
+    -- Each class gets ITS OWN catalog: a Mage sees the Mage spells, never the
+    -- Warlock ones (and vice versa). The override is restored BEFORE the
+    -- asserts so a failure cannot leak the stub into later suites.
     local origUnitClass = _G.UnitClass;
     local Spellbook = ACP.WorkflowSpellbook;
-    Spellbook:_reset();
 
-    -- Act
+    Spellbook:_reset();
     _G.UnitClass = function() return "Mage", "MAGE" end;
     Spellbook:addStaticFallback();
-    local mageCount = 0;
-    for _ in pairs(Spellbook.entriesByID) do mageCount = mageCount + 1; end
+    local mageCount = ACP.SpellbookCatalogBuilder:countEntries(Spellbook);
+    local mageHasWarlockSpell = Spellbook:getEntry(688) ~= nil or Spellbook:getEntry(27230) ~= nil;
+    local mageHasOwnSpells = Spellbook:getEntry(27090) ~= nil and Spellbook:getEntry(33717) ~= nil
+        and Spellbook:getEntry(27127) ~= nil;
 
+    Spellbook:_reset();
     _G.UnitClass = function() return "Warlock", "WARLOCK" end;
     Spellbook:addStaticFallback();
-    local warlockCount = 0;
-    for _ in pairs(Spellbook.entriesByID) do warlockCount = warlockCount + 1; end
+    local warlockCount = ACP.SpellbookCatalogBuilder:countEntries(Spellbook);
+    local warlockHasMageSpell = Spellbook:getEntry(27090) ~= nil or Spellbook:getEntry(27127) ~= nil;
+    local warlockHasOwnSpells = Spellbook:getEntry(688) ~= nil and Spellbook:getEntry(27230) ~= nil;
 
-    -- Assert
-    lu.assertEquals(mageCount, 0, "mage must not get the warlock catalog");
-    lu.assertIsTrue(warlockCount > 0, "warlock must get the warlock catalog");
     _G.UnitClass = origUnitClass;
+
+    lu.assertIsTrue(mageCount > 0, "mage must get the mage catalog");
+    lu.assertIsTrue(mageHasOwnSpells, "mage catalog carries conjures + buffs");
+    lu.assertIsFalse(mageHasWarlockSpell, "mage must never get warlock spells");
+    lu.assertIsTrue(warlockCount > 0, "warlock must get the warlock catalog");
+    lu.assertIsTrue(warlockHasOwnSpells, "warlock catalog carries summons + stones");
+    lu.assertIsFalse(warlockHasMageSpell, "warlock must never get mage spells");
+end
+
+function testStaticFallbackUnknownClassEmpty()
+    -- An unsupported class gets an empty Add Step catalog.
+    local origUnitClass = _G.UnitClass;
+    local Spellbook = ACP.WorkflowSpellbook;
+
+    Spellbook:_reset();
+    _G.UnitClass = function() return "Hunter", "HUNTER" end;
+    Spellbook:addStaticFallback();
+    local count = ACP.SpellbookCatalogBuilder:countEntries(Spellbook);
+    _G.UnitClass = origUnitClass;
+
+    lu.assertEquals(count, 0);
 end
 
 function testStaticFallbackIncludesPetsAndStoneRanks()
@@ -302,38 +225,54 @@ function testStaticFallbackIncludesPetsAndStoneRanks()
     _G.UnitClass = function() return "Warlock", "WARLOCK" end;
     Spellbook:addStaticFallback();
 
-    -- Assert
-    lu.assertIsTrue(Spellbook:getEntry(27269) ~= nil, "Fire Shield present");
-    lu.assertIsTrue(Spellbook:getEntry(7812) ~= nil, "Sacrifice present");
-    lu.assertIsTrue(Spellbook:getEntry(27230) ~= nil, "Create Healthstone rank 6 present");
-    lu.assertEquals(Spellbook:getEntry(27269).category, "pets");
-    lu.assertEquals(Spellbook:getEntry(27269).pet, "imp");
-    lu.assertEquals(Spellbook:getEntry(27269).canTargetParty, true, "Fire Shield is party-castable");
-    lu.assertEquals(Spellbook:getEntry(132).canTargetParty, true, "Detect Invisibility is party-castable");
-    lu.assertEquals(Spellbook:getEntry(27230).itemID, 22105);
+    local fireShield = Spellbook:getEntry(27269);
+    local sacrifice = Spellbook:getEntry(7812);
+    local masterStone = Spellbook:getEntry(27230);
+    local detect = Spellbook:getEntry(132);
     _G.UnitClass = origUnitClass;
+
+    -- Assert
+    lu.assertNotIsNil(fireShield, "Fire Shield present");
+    lu.assertNotIsNil(sacrifice, "Sacrifice present");
+    lu.assertNotIsNil(masterStone, "Create Healthstone rank 6 present");
+    lu.assertEquals(fireShield.category, "pets");
+    lu.assertEquals(fireShield.pet, "imp");
+    lu.assertEquals(fireShield.canTargetParty, true, "Fire Shield is party-castable");
+    lu.assertEquals(detect.canTargetParty, true, "Detect Invisibility is party-castable");
+    lu.assertEquals(masterStone.itemID, 22105);
 end
 
-function testGetEquipItem()
+function testStaticFallbackMageCategories()
     -- Arrange
-    -- Act
-    local master = W:getEquipItem(22646);
-    local missing = W:getEquipItem(99999);
-    -- Assert
-    lu.assertEquals(master.name, "Master Spellstone");
-    lu.assertIsNil(missing);
-end
+    local origUnitClass = _G.UnitClass;
+    local Spellbook = ACP.WorkflowSpellbook;
+    Spellbook:_reset();
 
-function testEquipItemsCatalog()
-    -- Arrange
-    -- Act
-    -- Assert
-    lu.assertEquals(#W.equipItems, 4);
-    lu.assertEquals(W.equipItems[1].itemID, 5522);
-    lu.assertEquals(W.equipItems[4].itemID, 22646);
+    -- Act: merge (conjured ranks, sets rank/itemID) then the full fallback —
+    -- the same order WorkflowSpellbook:scan() uses.
+    _G.UnitClass = function() return "Mage", "MAGE" end;
+    Spellbook:mergeStaticWarlock();
+    Spellbook:addStaticFallback();
+
+    local water = Spellbook:getEntry(27090);
+    local food = Spellbook:getEntry(33717);
+    local intellect = Spellbook:getEntry(27126);
+    local ritual = Spellbook:getEntry(43987);
+    _G.UnitClass = origUnitClass;
+
+    -- Assert: conjured entries land in createItem with itemIDs + ranks.
+    lu.assertEquals(water.category, "createItem");
+    lu.assertEquals(water.itemID, 22018);
+    lu.assertEquals(water.rank, 9);
+    lu.assertEquals(food.category, "createItem");
+    lu.assertEquals(food.itemID, 22019);
+    lu.assertEquals(food.rank, 8);
+    lu.assertEquals(intellect.category, "buffs");
+    lu.assertEquals(ritual.category, "utility");
 end
 
 -- ---- WorkflowSpellbook rebuild (the live spellbook scan was REMOVED
+--     2026-08-24 — the catalog is built from the static data only) ----
 
 local function spellbookGroup(category, name)
     for _, group in ipairs(ACP.WorkflowSpellbook.groupsByCategory[category] or {}) do
@@ -378,7 +317,31 @@ function testRebuildFillsStaticCatalogForWarlock()
     _G.UnitClass = DefaultUnitClass;
 end
 
--- ---- SpellbookCatalogBuilder / WarlockCatalogExtender (refactor Phase 7) ----
+function testRebuildFillsStaticCatalogForMage()
+    -- Arrange: a Mage gets the Mage catalog with both Amplify/Dampen ranks.
+    _G.__stub.spellInfo = {};
+    _G.UnitClass = function() return "Mage", "MAGE" end;
+
+    -- Act
+    ACP.WorkflowSpellbook:scan();
+
+    -- Assert
+    lu.assertNotIsNil(ACP.WorkflowSpellbook:getEntry(27090), "Conjure Water present");
+    lu.assertNotIsNil(ACP.WorkflowSpellbook:getEntry(33717), "Conjure Food present");
+    lu.assertNotIsNil(ACP.WorkflowSpellbook:getEntry(27127), "Arcane Brilliance present");
+    lu.assertNotIsNil(ACP.WorkflowSpellbook:getEntry(1008), "Amplify Magic rank 1 present");
+    lu.assertNotIsNil(ACP.WorkflowSpellbook:getEntry(33946), "Amplify Magic max rank present");
+    lu.assertNotIsNil(spellbookGroup("buffs", "Arcane Brilliance"));
+    lu.assertNotIsNil(spellbookGroup("createItem", "Conjure Water"));
+    lu.assertNotIsNil(spellbookGroup("utility", "Ritual of Refreshment"));
+    lu.assertIsNil(ACP.WorkflowSpellbook:getEntry(688), "no Warlock summons for a Mage");
+
+    -- Tear down
+    clearSpellbookStubs();
+    _G.UnitClass = DefaultUnitClass;
+end
+
+-- ---- SpellbookCatalogBuilder ----
 
 function testCatalogBuilderRankResultHealthstone()
     -- A rank-suffixed Create Healthstone entry resolves its item via the
@@ -405,10 +368,11 @@ function testCatalogBuilderDuplicateNameCategoryUpgrade()
     -- category to the metadata's.
     local spellbook = ACP.WorkflowSpellbook;
     ACP.SpellbookCatalogBuilder:reset(spellbook);
-    local spells = ACP.Data.Workflows.spells;
-    ACP.Data.Workflows.spells = nil;
+    local warlockData = ACP.Data.WarlockWorkflows;
+    local spells = warlockData.spells;
+    warlockData.spells = nil;
     ACP.SpellbookCatalogBuilder:addEntry(spellbook, 999007, "Fel Armor", "");
-    ACP.Data.Workflows.spells = spells;
+    warlockData.spells = spells;
     ACP.SpellbookCatalogBuilder:addEntry(spellbook, 999008, "Fel Armor", "");
     local group = ACP.SpellbookCatalogBuilder:getGroup(spellbook, "Fel Armor");
     lu.assertEquals(group.category, "buffs");
@@ -423,10 +387,11 @@ function testMergeStaticWarlockGatedForOtherClasses()
     _G.UnitClass = function() return "Mage", "MAGE" end;
     ACP.WarlockCatalogExtender:mergeStaticWarlock(spellbook);
     ACP.WarlockCatalogExtender:addStaticFallback(spellbook);
-    lu.assertEquals(ACP.SpellbookCatalogBuilder:countEntries(spellbook), 0);
-    _G.UnitClass = function() return "Warlock", "WARLOCK" end;
-    ACP.SpellbookCatalogBuilder:reset(spellbook);
+    local count = ACP.SpellbookCatalogBuilder:countEntries(spellbook);
     _G.UnitClass = origUnitClass;
+
+    lu.assertEquals(count, 0);
+    ACP.SpellbookCatalogBuilder:reset(spellbook);
 end
 
 -- Restore the stub's UnitClass for subsequent suites (see DefaultUnitClass).

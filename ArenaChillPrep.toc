@@ -19,6 +19,8 @@ Data/Constants.lua
 Data/Items.lua
 Data/DefaultSettings.lua
 Data/Localization.lua
+Data/WarlockWorkflows.lua
+Data/MageWorkflows.lua
 Data/Workflows.lua
 
 Utils/Tables.lua
@@ -35,6 +37,8 @@ Classes/StateMachine.lua
 Classes/Preconditions.lua
 Classes/SpellbookCatalogBuilder.lua
 Classes/WarlockCatalogExtender.lua
+Classes/MageCatalogExtender.lua
+Classes/ClassCatalogDispatch.lua
 Classes/SpellbookLabels.lua
 Classes/WorkflowSpellbook.lua
 Classes/ArenaPrep.lua

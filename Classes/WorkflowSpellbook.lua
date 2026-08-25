@@ -22,8 +22,8 @@ ACP.WorkflowSpellbook = Spellbook;
 function Spellbook:scan()
     ACP.SpellbookCatalogBuilder:reset(self);
 
-    ACP.WarlockCatalogExtender:mergeStaticWarlock(self);
-    ACP.WarlockCatalogExtender:addStaticFallback(self);
+    ACP.ClassCatalogDispatch:merge(self);
+    ACP.ClassCatalogDispatch:addStaticFallback(self);
 
     ACP:debugPrint("workflow spellbook catalog rebuilt: found=%d",
         ACP.SpellbookCatalogBuilder:countEntries(self));
@@ -91,15 +91,19 @@ function Spellbook:getGroupsByCategory()
 end
 
 function Spellbook:mergeStaticWarlock()
-    return ACP.WarlockCatalogExtender:mergeStaticWarlock(self);
+    return ACP.ClassCatalogDispatch:merge(self);
 end
 
 function Spellbook:addStaticFallback()
-    return ACP.WarlockCatalogExtender:addStaticFallback(self);
+    return ACP.ClassCatalogDispatch:addStaticFallback(self);
 end
 
 function Spellbook:stoneStepLabel(entry)
     return ACP.SpellbookLabels:stoneStepLabel(entry);
+end
+
+function Spellbook:rankStepLabel(entry)
+    return ACP.SpellbookLabels:rankStepLabel(entry);
 end
 
 return ACP;

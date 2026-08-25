@@ -21,9 +21,11 @@ local strings = {
         disabled = "Addon disabled",
         debugToggled = "Debug logging: %s",
 
-        -- First-run welcome popup (Warlock-only, once per account)
+        -- First-run welcome popup (Warlock/Mage, once per account)
         welcomeLine1 = "Auto-trades healthstones to your partner.",
         welcomeLine2 = "One key runs your whole prep.",
+        welcomeLine1Mage = "Auto-trades food and water to your partner.",
+        welcomeLine2Mage = "One key runs your whole prep.",
         welcomeCta = "Set up key",
         welcomeLater = "Later",
         welcomeKeyAlreadyBound = "Workflow 1 already has a key bound (%s) - nothing to set up.",
@@ -45,7 +47,11 @@ local strings = {
         bracket3v3Tooltip = "Enable auto-trade in the 3v3 bracket (disabled in this version)",
         bracket5v5Tooltip = "Enable auto-trade in the 5v5 bracket (disabled in this version)",
         ranksLabel = "Ranks to pass",
-        rankTooltip = "Pass %s healthstones to your partner during arena preparation",
+        rankTooltip = "Pass %s to your partner during arena preparation",
+        foodCountLabel = "Food count to pass:",
+        foodCountTooltip = "How many conjured food items must be in your bags before the trade opens (each Conjure Food cast creates 10)",
+        waterCountLabel = "Water count to pass:",
+        waterCountTooltip = "How many conjured water items must be in your bags before the trade opens (each Conjure Water cast creates 10)",
         timingHeader = "Timing",
         tradeDelayLabel = "Trade delay (seconds):",
         tradeDelayTooltip = "Seconds between the item appearing in your bags and the trade window opening",
@@ -199,9 +205,11 @@ local strings = {
         disabled = "Аддон выключен",
         debugToggled = "Отладка: %s",
 
-        -- First-run welcome popup (Warlock-only, once per account)
+        -- First-run welcome popup (Warlock/Mage, once per account)
         welcomeLine1 = "Автоматически передаёт камни здоровья партнёру.",
         welcomeLine2 = "Одна клавиша — вся подготовка.",
+        welcomeLine1Mage = "Автоматически передаёт еду и воду партнёру.",
+        welcomeLine2Mage = "Одна клавиша — вся подготовка.",
         welcomeCta = "Назначить клавишу",
         welcomeLater = "Позже",
         welcomeKeyAlreadyBound = "У сценария 1 уже назначена клавиша (%s) — настраивать нечего.",
@@ -223,7 +231,11 @@ local strings = {
         bracket3v3Tooltip = "Авто-обмен в брекете 3v3 (отключено в этой версии)",
         bracket5v5Tooltip = "Авто-обмен в брекете 5v5 (отключено в этой версии)",
         ranksLabel = "Ранги для передачи",
-        rankTooltip = "Передавать %s камни здоровья партнёру во время подготовки к арене",
+        rankTooltip = "Передавать %s партнёру во время подготовки к арене",
+        foodCountLabel = "Передать еды:",
+        foodCountTooltip = "Сколько созданной еды должно быть в сумках до открытия обмена (каждый каст «Сотворения еды» даёт 10)",
+        waterCountLabel = "Передать воды:",
+        waterCountTooltip = "Сколько созданной воды должно быть в сумках до открытия обмена (каждый каст «Сотворения воды» даёт 10)",
         timingHeader = "Тайминги",
         tradeDelayLabel = "Задержка обмена (секунды):",
         tradeDelayTooltip = "Секунды между появлением предмета в сумках и открытием окна обмена",

@@ -21,6 +21,27 @@ local function resetTM()
     H.SyncTimers.Handles = {};
 end
 
+local function installBags(fake)
+    _G.__stub.bags = fake;
+    local fakeSlots = function(bag)
+        return fake[bag] and #fake[bag] or 0;
+    end;
+    local fakeInfo = function(bag, slot)
+        local e = fake[bag] and fake[bag][slot];
+        if (not e) then return nil; end
+        return {
+            iconFileID = nil, stackCount = e.stackCount, isLocked = false,
+            quality = 0, isReadable = false, hasLoot = false, hyperlink = nil,
+            isFiltered = false, hasNoValue = false, itemID = e.itemID,
+            isBound = e.bound,
+        };
+    end;
+    _G.GetContainerNumSlots = fakeSlots;
+    _G.GetContainerItemInfo = fakeInfo;
+    _G.C_Container.GetContainerNumSlots = fakeSlots;
+    _G.C_Container.GetContainerItemInfo = fakeInfo;
+end
+
 function testStartTrade()
     -- Arrange
     resetTM();
@@ -159,17 +180,16 @@ function testQueueItemsFromPlanner()
     resetTM();
     ACP.Settings:set("items.healthstone.enabled", true);
     ACP.Settings:set("items.healthstone.count", 1);
-    local origGetCount = ACP.Inventory.getCount;
-    ACP.Inventory.getCount = function(_, itemID)
-        if (itemID == 19012 or itemID == 19013) then return 1; end
-        if (itemID == 22105) then return 1; end
-        return 0;
-    end;
+    installBags({
+        [0] = {
+            { itemID = 19012, stackCount = 1, bound = false },
+            { itemID = 22105, stackCount = 1, bound = false },
+        },
+    });
     -- Act
     TM:queueItems(ACP.TradePlanner:buildQueue());
     -- Assert
     lu.assertEquals(#TM.ItemsToAdd, 2);
-    ACP.Inventory.getCount = origGetCount;
 end
 
 function testQueueItemsFromPlannerDisabled()
@@ -188,17 +208,17 @@ function testQueueItemsFromPlannerCount()
     resetTM();
     ACP.Settings:set("items.healthstone.enabled", true);
     ACP.Settings:set("items.healthstone.count", 2);
-    local origGetCount = ACP.Inventory.getCount;
-    ACP.Inventory.getCount = function(_, itemID)
-        if (itemID == 22105) then return 2; end
-        return 0;
-    end;
+    installBags({
+        [0] = {
+            { itemID = 22105, stackCount = 1, bound = false },
+            { itemID = 22105, stackCount = 1, bound = false },
+        },
+    });
     -- Act
     TM:queueItems(ACP.TradePlanner:buildQueue());
     -- Assert
     lu.assertEquals(#TM.ItemsToAdd, 2);
     ACP.Settings:set("items.healthstone.count", 1);
-    ACP.Inventory.getCount = origGetCount;
 end
 
 -- ---- event-driven handlers (registered in _init) ----
@@ -231,11 +251,9 @@ function testTradeShowAutoPlaces()
     TM.partnerUnit = "party1";
     ACP.Settings:set("items.healthstone.enabled", true);
     ACP.Settings:set("items.healthstone.count", 1);
-    local origGetCount = ACP.Inventory.getCount;
-    ACP.Inventory.getCount = function(_, itemID)
-        if (itemID == 22105) then return 1; end
-        return 0;
-    end;
+    installBags({
+        [0] = { { itemID = 22105, stackCount = 1, bound = false } },
+    });
     local opened = false;
     ACP.Events:register("t.opened", "ACP_TRADE_OPENED", function() opened = true; end);
     -- Act
@@ -245,7 +263,6 @@ function testTradeShowAutoPlaces()
     lu.assertIsTrue(H.hasTimer("TradeItemQueue"));
     lu.assertEquals(#TM.ItemsToAdd, 1);
     ACP.Events:unregister("t.opened");
-    ACP.Inventory.getCount = origGetCount;
 end
 
 function testTradeShowInboundTakesOver()
@@ -259,11 +276,9 @@ function testTradeShowInboundTakesOver()
     end;
     ACP.Settings:set("items.healthstone.enabled", true);
     ACP.Settings:set("items.healthstone.count", 1);
-    local origGetCount = ACP.Inventory.getCount;
-    ACP.Inventory.getCount = function(_, itemID)
-        if (itemID == 22105) then return 1; end
-        return 0;
-    end;
+    installBags({
+        [0] = { { itemID = 22105, stackCount = 1, bound = false } },
+    });
     -- Pretend the controller is actively prepping a teammate trade.
     ACP.DeliveryController.shouldTakeOverInboundTrade = function() return true; end;
     local opened = false;
@@ -276,7 +291,6 @@ function testTradeShowInboundTakesOver()
     lu.assertIsTrue(H.hasTimer("TradeItemQueue"));
     lu.assertEquals(#TM.ItemsToAdd, 1);
     ACP.Events:unregister("t.opened");
-    ACP.Inventory.getCount = origGetCount;
     _G.UnitName = function() return "Player" end;
 end
 
