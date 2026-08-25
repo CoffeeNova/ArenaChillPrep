@@ -5,7 +5,7 @@
 --
 -- Layout (top -> bottom):
 --   status line        — engine state + slot state + step count
---   workflow defaults  — skip-if-buffed default + description
+--   workflow defaults  — skip-completed-steps master switch + description
 --   workflow editor    — selector, add/clone/delete, name, enabled, key bind
 --   steps              — table header + scrollable step list filling the rest
 --
@@ -39,7 +39,6 @@ local STEP_HEADER_H = 22;
 local STEP_LIST_FLOOR = 40;
 local STEP_NUM_W = 24;
 local STEP_TARGET_W = 96;
-local STEP_SKIP_W = 80;
 local TARGET_X_SHIFT = 24;
 local FIELD_X = 74;
 local ACTIONS_GAP = 4;
@@ -589,7 +588,7 @@ function WorkflowUI:buildStepRow(parent, rowW, slot, index, count, step, y)
     -- place, so the row keeps its position. Single-line cell — the SpellID/
     -- ItemID metadata and the "pet ability" hint were removed as redundant.
     local spellX = STEP_NUM_W;
-    local spellW = rowW - STEP_NUM_W - STEP_TARGET_W - STEP_SKIP_W - actionLayout().total;
+    local spellW = rowW - STEP_NUM_W - STEP_TARGET_W - actionLayout().total;
 
     local labelText;
 
@@ -645,30 +644,9 @@ function WorkflowUI:buildStepRow(parent, rowW, slot, index, count, step, y)
         attachTooltip(targetText, L.targetUnavailableTooltip);
     end
 
-    -- Skip column (fixed width; applies to buff-cast, summon and createItem
-    -- steps — "skip if the step's goal is already met"). Other step types
-    -- (pet abilities, equip items) render an explicit disabled state.
-    local skipX = targetX + STEP_TARGET_W + TARGET_X_SHIFT;
-
-    local isBuff = entry and entry.buffSpellID and step.type == C.WORKFLOW_STEP_CAST;
-    local skippable = isBuff
-        or step.type == C.WORKFLOW_STEP_SUMMON
-        or step.type == C.WORKFLOW_STEP_CREATE_ITEM;
-
-    if (skippable) then
-        local skip = UI.Checkbox(row, ("ACPWorkflowSkip%d_%d"):format(slot, index), "", skipX, -12, function()
-            return ACP.WorkflowEngine:effectiveSkip(step);
-        end, function(value)
-            setSetting(stepPath(slot, index) .. ".skipIfBuffed", value);
-        end, L.skipTooltip);
-        controls[#controls + 1] = skip;
-    else
-        local skipText = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall");
-        skipText:SetPoint("TOPLEFT", row, "TOPLEFT", skipX + 2, -8);
-        skipText:SetText(L.notAvailable);
-        skipText:SetTextColor(0.45, 0.45, 0.45, 1);
-        attachTooltip(skipText, L.skipUnavailableTooltip);
-    end
+    -- Skip column REMOVED (2026-08-25): the skip decision is the global
+    -- `workflows.skipIfBuffedDefault` setting — no per-step flag, so the freed
+    -- width goes to the spell cell.
 
     -- Actions column (fixed width, right-aligned). Text labels instead of
     -- ↑/↓ glyphs — the client font renders those arrows as boxes.
@@ -802,8 +780,8 @@ function WorkflowUI:buildStatusBar(content, x, y, width)
     return STATUS_H;
 end
 
---- Workflow defaults block: the skip-if-buffed default + its description,
---- kept separate from the per-workflow identity/binding form.
+--- Workflow defaults block: the skip-completed-steps master switch + its
+--- description, kept separate from the per-workflow identity/binding form.
 function WorkflowUI:buildDefaults(content, x, y, width)
     local L = ACP.L.workflow;
     local UI = ACP.UI;
@@ -959,7 +937,7 @@ function WorkflowUI:buildStepsHeader(content, x, y, width)
     local L = ACP.L.workflow;
     local spellX = x + STEP_NUM_W;
     local total = actionLayout().total;
-    local spellW = width - STEP_NUM_W - STEP_TARGET_W - STEP_SKIP_W - total;
+    local spellW = width - STEP_NUM_W - STEP_TARGET_W - total;
 
     local function col(text, colX, colW, align)
         local fs = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall");
@@ -973,7 +951,6 @@ function WorkflowUI:buildStepsHeader(content, x, y, width)
     col("#", x, STEP_NUM_W, "LEFT");
     col(L.stepSpellColumn, spellX, spellW, "LEFT");
     col(L.targetColumn, spellX + spellW - TARGET_X_SHIFT, STEP_TARGET_W, "LEFT");
-    col(L.skipColumn, spellX + spellW + STEP_TARGET_W, STEP_SKIP_W, "LEFT");
     col(L.actionsColumn, x + width - total, total, "RIGHT");
 end
 

@@ -215,15 +215,6 @@ function Workflows:validateStep(step)
         end
     end
 
-    -- skipIfBuffed may appear on buff-cast, summon and createItem steps
-    -- (the engine skips them when their goal is already met).
-    if ((stepType == C.WORKFLOW_STEP_CAST
-            or stepType == C.WORKFLOW_STEP_SUMMON
-            or stepType == C.WORKFLOW_STEP_CREATE_ITEM)
-        and step.skipIfBuffed ~= nil and type(step.skipIfBuffed) ~= "boolean") then
-        return false, ACP.L.workflow.errBadSkip;
-    end
-
     return true;
 end
 

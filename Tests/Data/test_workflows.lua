@@ -17,7 +17,7 @@ end
 
 function testValidateCastStep()
     -- Arrange
-    local step = { type = "cast", spellID = 5697, target = "player", skipIfBuffed = true };
+    local step = { type = "cast", spellID = 5697, target = "player" };
     -- Act
     local ok, err = W:validateStep(step);
     -- Assert
@@ -121,14 +121,17 @@ function testValidateRejectsBadTarget()
     lu.assertStrContains(err, "bogus");
 end
 
-function testValidateRejectsBadSkip()
+function testValidateToleratesLegacySkipFlag()
+    -- The per-step skipIfBuffed flag was REMOVED (2026-08-25) — saved data may
+    -- still carry it (any type); the validator must accept it (the engine
+    -- ignores it).
     -- Arrange
     local step = { type = "cast", spellID = 5697, skipIfBuffed = "yes" };
     -- Act
     local ok, err = W:validateStep(step);
     -- Assert
-    lu.assertIsFalse(ok);
-    lu.assertStrContains(err, "skipIfBuffed");
+    lu.assertIsTrue(ok);
+    lu.assertIsNil(err);
 end
 
 function testValidateCreateItemRequiresItemID()

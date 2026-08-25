@@ -95,7 +95,7 @@ Each step in `workflows.definitions[N].steps` is a table:
 
 ```lua
 -- Cast a spell on a target (buffs, party buffs).
-{ type = "cast", spellID = 706, target = "player", skipIfBuffed = true }
+{ type = "cast", spellID = 706, target = "player" }
 
 -- Summon a pet (special-cased cast, target irrelevant).
 { type = "summon", spellID = 712 }
@@ -119,8 +119,9 @@ Each step in `workflows.definitions[N].steps` is a table:
 | `type` | string | `"cast"` / `"summon"` / `"createItem"` / `"equipItem"` |
 | `spellID` | number | Spell ID (catalog reference; resolved to name via `GetSpellInfo` at runtime). Not present for `equipItem` steps. |
 | `target` | string | `"player"` / `"party1"` / `"party2"` / `"party3"` / `"party4"`. Only for `cast`; `summon`, `createItem` and `equipItem` always target self. |
-| `skipIfBuffed` | boolean | "Skip if already done". If true and the step's goal is already met, skip it: `cast` → target already has the buff aura; `summon` → the pet is already out; `createItem` → the product is already in bags. |
 | `itemID` | number | Expected item ID: what `createItem` waits for in bags / what `equipItem` equips. Required for `createItem` and `equipItem`. For stone spells the engine expands it to the rank's FULL variant set (`stoneRanks[spellID].itemIDs` — healthstone ranks 1-5 are historical ID pairs, e.g. Major = 19012/19013; the client conjures one variant per rank, verified rank 5 → 19013, so completion accepts EITHER variant of the step's rank but never another rank). |
+
+> **Skip-if-done is a GLOBAL setting only (2026-08-25).** The per-step `skipIfBuffed` flag (the "Skip if done" checkbox) was REMOVED. `workflows.skipIfBuffedDefault` is now the master switch: when ON, the engine skips a `cast` (buff) / `summon` / `createItem` step whose goal is already met (`isStepGoalMet` — buff aura present / pet already out / product already in bags). Stale `skipIfBuffed` fields in saved data are ignored.
 | `itemName` | string | Optional localized-item-name fallback for `equipItem` (display; the runtime resolves via `GetItemInfo(itemID)`). |
 
 > **Goal-met fast paths (2026-08-20):** `createItem` advances immediately when the item is
@@ -158,12 +159,12 @@ Each step in `workflows.definitions[N].steps` is a table:
 executeCurrentStep():
   1. If stepIndex > #steps → DONE, restore target, fire ACP_WORKFLOW_DONE.
   2. Fire ACP_WORKFLOW_STEP(slot, stepIndex, step).
-   3. If skipIfBuffed and isStepGoalMet(step) → advance (skip). Checked BEFORE the
+   3. If the global skip setting applies (effectiveSkip) and isStepGoalMet(step) → advance (skip). Checked BEFORE the
       gates (§3.7) so a met goal is honored even when a reagent/combat gate would
       otherwise pause the step (no point conjuring a stone you already have, or
       summoning a pet that is already out).
    4. Run gates (§3.7). If any gate fails → PAUSED.
-  5. Dispatch by type (equipItem BEFORE the spell-only knowsSpell/skipIfBuffed checks):
+  5. Dispatch by type (equipItem BEFORE the spell-only knowsSpell check):
      • cast/summon → castSpell(step)
      • createItem  → createItem(step)
      • equipItem   → equipItem(step)
@@ -212,9 +213,9 @@ equipItem(step):
      fallbacks: step.itemName, "item:<id>").
   2. Same unified-key press flow as castSpell (pressEquip message; noHotkey pause).
   3. Completion is POLL-DRIVEN: 0.25 s poll until countItem(itemID) == 0 (the stone
-     left the bags = equipped). User-paced — no timeout while waiting for the press;
-     no UNIT_SPELLCAST_* fires for item use. No spellID → the spell-only gates
-     (knowsSpell/skipIfBuffed) are skipped.
+      left the bags = equipped). User-paced — no timeout while waiting for the press;
+      no UNIT_SPELLCAST_* fires for item use. No spellID → the spell-only knowsSpell
+      gate is skipped.
 
 advance():
   1. restoreTarget() (if we changed it).
@@ -270,7 +271,7 @@ Checked before every cast, in order:
 | Has reagents (if needsShard) | `Inventory:countItem(6265) >= 1` | PAUSED |
 | Gate safety | `ArenaPrep:getRemainingTime() >= gateSafetySeconds` | PAUSED |
 
-**`optional` vs. blocking:** a gate failure on a `skipIfBuffed` step skips; on other steps, it pauses (the user fixes the condition and presses the key to resume).
+**`optional` vs. blocking:** a gate failure on a skippable step (global setting ON) skips; on other steps, it pauses (the user fixes the condition and presses the key to resume).
 
 > **Knows-the-spell refinement (Phase 8, 2026-08-18):** the gate uses `IsPlayerSpell(name)` (matches any known rank — a trained rank replaces the base ID in the spellbook, so the rank-1 catalog ID alone is false at max level) with `IsPlayerSpell(spellID)` as fallback, both pcall-guarded. `IsUsableSpell(name)` was NOT used — it conflates "known" with "usable" (a known spell with a missing reagent returns false), which would wrongly skip a shard-gated step before the shard gate runs.
 
@@ -375,14 +376,14 @@ function _G.ACP_WORKFLOW2() ACP.WorkflowEngine:start(2); end
 ```lua
 workflows = {
     enabled = true,               -- master workflow switch (shown on General tab)
-    skipIfBuffedDefault = true,   -- default for new cast/summon/createItem steps' skipIfBuffed
+    skipIfBuffedDefault = true,   -- master switch: skip cast/summon/createItem steps whose goal is already met (no per-step flag, 2026-08-25)
     slotCount = 5,                -- UI starts with five; + adds up to binding capacity
     definitions = {
         [1] = {
             enabled = true,
             name = "Full prep 2s",
             steps = {
-                { type = "cast",       spellID = 28176, target = "player", skipIfBuffed = true },  -- Fel Armor (rank 1, verified in-game)
+                { type = "cast",       spellID = 28176, target = "player" },  -- Fel Armor (rank 1, verified in-game)
                 { type = "summon",     spellID = 712 },                                         -- Succubus
                 { type = "createItem", spellID = 6201, itemID = 22105 },                      -- Create Healthstone (Master)
             },
@@ -722,10 +723,10 @@ Test pattern: same as `DeliveryController` tests — drive the real engine throu
 **Tasks:**
 1. `Classes/UI/Widgets.lua`: add `UI.Dropdown`, `UI.TextInput`, `UI.ScrollFrame` (§3.14).
 2. `Classes/UI/WorkflowUI.lua`:
-   - `build(content, w, h)`: global settings box (pauseOnMove, skipIfBuffedDefault), workflow selector (dropdown 1-5 + enable checkbox + name input), step editor (scrollable list with per-step controls), keybind display.
+   - `build(content, w, h)`: workflow defaults box (skipIfBuffedDefault — the global skip master switch), workflow selector (dropdown 1-5 + enable checkbox + name input), step editor (scrollable list with per-step controls), keybind display.
    - `refresh()`: re-sync all controls from Settings.
-   - Step row: spell name label, target dropdown (for `cast`/`pet` steps with `canTargetParty`), skip-if-done checkbox (for `cast` buff / `summon` / `createItem` steps), remove button, move up/down buttons.
-   - Add step: dropdown of available spells from `ACP.Data.Workflows.spells` (grouped by category). Selecting a spell adds a step with defaults (target = "player" for castable steps; `skipIfBuffed = workflows.skipIfBuffedDefault` for `cast` (buff) / `summon` / `createItem` steps).
+   - Step row: spell name label, target dropdown (for `cast`/`pet` steps with `canTargetParty`), remove button, move up/down buttons. (The skip-if-done checkbox was REMOVED 2026-08-25 — skipping is global via `skipIfBuffedDefault`.)
+   - Add step: dropdown of available spells from `ACP.Data.Workflows.spells` (grouped by category). Selecting a spell adds a step with defaults (target = "player" for castable steps; no per-step skip flag).
    - All changes write to `Settings` immediately and persist (`ArenaChillPrepDB = ACP.Settings.Data`).
 3. `Classes/OptionsUI.lua`:
    - Add "Workflows" subcategory to `self.Subcategories` (after General, before Autotrade).
@@ -737,7 +738,7 @@ Test pattern: same as `DeliveryController` tests — drive the real engine throu
 **Definition of Done:**
 - `/reload` → `/acp` → three tabs: General, Workflows, Autotrade.
 - General: "Enable workflow engine" checkbox (toggles `workflows.enabled`).
-- Workflows: select a workflow slot, add/remove/reorder steps, set targets, toggle skip-if-buffed.
+- Workflows: select a workflow slot, add/remove/reorder steps, set targets, toggle the global skip setting.
 - Changes persist across `/reload`.
 - Keybind display shows the bound key or "Not bound" per slot.
 - Master switch off → workflow controls grayed.
@@ -788,7 +789,7 @@ Test pattern: same as `DeliveryController` tests — drive the real engine throu
 | Player moves before an instant cast | `IsPlayerMoving()` gate → PAUSED. Resume on key press (after stopping). |
 | Player has no Soul Shard for summon/createItem | Shard gate → PAUSED, log "no soul shard". Resume after acquiring one (loot/bag update). |
 | Player doesn't know the spell | `IsPlayerSpell`/`IsUsableSpell` fails → skip step (log "spell not known"), continue to next. |
-| Step goal already met and skipIfBuffed = true | `isStepGoalMet` passes (buff aura present / pet already out / item already in bags) → skip step, advance, before the reagent gate. |
+| Step goal already met and the global skip setting is ON | `isStepGoalMet` passes (buff aura present / pet already out / item already in bags) → skip step, advance, before the reagent gate. |
 | Cast fails (out of range, LOS, etc.) | `UNIT_SPELLCAST_FAILED` → PAUSED. Resume on key press. |
 | Workflow reaches the last step | DONE. `stepIndex` stays at last+1. Key press does nothing (must wait for new arena). |
 | `ACP_BUFF_LOST` mid-workflow (gates open) | `reset()` → IDLE. No further casts. New arena → starts from step 1. |
@@ -819,7 +820,7 @@ Run with `/console scriptErrors 1` and `/acp debug` on.
 11. **Full cycle:** 2v2 arena → bind key → press → Fel Armor → Succubus → Healthstone → autotrade opens → partner gets stone → workflow DONE.
 12. **Pause/resume:** move during Succubus summon → PAUSED → stop → press key → resumes from summon.
 13. **New arena reset:** next arena → press key → starts from step 1 (not where it left off).
-14. **UI editor:** add/remove/reorder steps, set targets, toggle skip-if-buffed → changes persist across `/reload`.
+14. **UI editor:** add/remove/reorder steps, set targets, toggle the global skip setting → changes persist across `/reload`.
 15. **Coexistence:** workflow creates a stone → autotrade opens trade (existing behavior) — no conflict, no double-trade.
 16. **Stability:** 5+ arenas with `/console scriptErrors 1` — zero Lua errors.
 

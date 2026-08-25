@@ -459,7 +459,7 @@ function testStartInDebugBypassResumesPaused()
 end
 
 -- Regression: the "skip completed steps" setting now applies to summon steps —
--- a summon step with skipIfBuffed=true is skipped when the pet is already out
+-- a summon step is skipped when the pet is already out
 -- (matched by the pet's creature entry ID, locale-independent).
 function testIsAlreadySummonedMatchesPetEntry()
     -- Arrange
@@ -485,8 +485,8 @@ function testIsAlreadySummonedMatchesPetEntry()
     _G.__stub.unitGUID = nil;
 end
 
--- Regression: skip also applies to createItem steps — a createItem step with
--- skipIfBuffed=true is skipped when its product is already in bags.
+-- Regression: skip also applies to createItem steps — a createItem step is
+-- skipped when its product is already in bags.
 function testIsItemAlreadyPresentWhenInBags()
     -- Arrange
     local key = "F9";
@@ -537,8 +537,8 @@ function testIsItemAlreadyPresentExactRankWhenKnown()
     _G.__stub.knownSpells = {};
 end
 
--- Regression: dispatch skips a summon step (skipIfBuffed=true) when the pet is
--- already out, advancing past it without requesting a cast.
+-- Regression: dispatch skips a summon step when the pet is already out,
+-- advancing past it without requesting a cast (the global setting governs).
 function testDispatchSkipsSummonWhenPetOut()
     -- Arrange
     local key = "F9";
@@ -556,7 +556,7 @@ function testDispatchSkipsSummonWhenPetOut()
     local savedDef = ACP.Settings.WorkflowData.definitions[1];
     ACP.Settings.WorkflowData.definitions[1] = {
         enabled = true, name = "summon-skip", steps = {
-            { type = "summon", spellID = 688, skipIfBuffed = true },
+            { type = "summon", spellID = 688 },
             { type = "pet", spellID = 27269, spellName = "Fire Shield", target = "player" },
         },
     };
@@ -574,8 +574,8 @@ function testDispatchSkipsSummonWhenPetOut()
     Engine:reset();
 end
 
--- Regression: a createItem step with skipIfBuffed=true is skipped (no cast
--- requested) when the product is already in bags.
+-- Regression: a createItem step is skipped (no cast requested) when the
+-- product is already in bags.
 function testDispatchSkipsCreateItemWhenPresent()
     -- Arrange
     local key = "F9";
@@ -595,7 +595,7 @@ function testDispatchSkipsCreateItemWhenPresent()
     local savedDef = ACP.Settings.WorkflowData.definitions[1];
     ACP.Settings.WorkflowData.definitions[1] = {
         enabled = true, name = "item-skip", steps = {
-            { type = "createItem", spellID = 27230, itemID = 22105, skipIfBuffed = true },
+            { type = "createItem", spellID = 27230, itemID = 22105 },
             { type = "pet", spellID = 27269, spellName = "Fire Shield", target = "player" },
         },
     };
@@ -648,7 +648,7 @@ function testDispatchSkipsCreateItemOnlyForExactRank()
     local savedDef = ACP.Settings.WorkflowData.definitions[1];
     ACP.Settings.WorkflowData.definitions[1] = {
         enabled = true, name = "exact-rank", steps = {
-            { type = "createItem", spellID = 11730, itemID = 19012, skipIfBuffed = true },
+            { type = "createItem", spellID = 11730, itemID = 19012 },
             { type = "pet", spellID = 27269, spellName = "Fire Shield", target = "player" },
         },
     };
@@ -732,6 +732,36 @@ function testEffectiveSkipSummonHonorsGlobalDefault()
     ACP.Settings.WorkflowData.definitions[1] = savedDef;
     _G.__stub.knownSpells = savedKnown;
     _G.__stub.unitGUID = nil;
+    Engine:reset();
+end
+
+-- Regression (2026-08-25): the per-step skipIfBuffed flag was REMOVED — the
+-- global "skip completed steps" setting alone decides. A legacy
+-- skipIfBuffed=false on a saved step must NOT force the cast (it is ignored).
+function testEffectiveSkipIgnoresLegacyStepFlag()
+    -- Arrange
+    Engine:_init();
+
+    local savedSetting = ACP.Settings:get("workflows.skipIfBuffedDefault");
+    ACP.Settings:set("workflows.skipIfBuffedDefault", true);
+
+    -- Act + Assert: legacy flags do not override the global setting.
+    lu.assertTrue(Engine:effectiveSkip({ type = "summon", spellID = 688, skipIfBuffed = false }));
+    lu.assertTrue(Engine:effectiveSkip({ type = "summon", spellID = 688, skipIfBuffed = true }));
+    lu.assertTrue(Engine:effectiveSkip({ type = "summon", spellID = 688 }));
+
+    -- Non-skippable step types are never skipped (pet / equipItem).
+    lu.assertFalse(Engine:effectiveSkip({ type = "pet", spellID = 27269, skipIfBuffed = true }));
+    lu.assertFalse(Engine:effectiveSkip({ type = "equipItem", itemID = 22646 }));
+
+    -- The setting OFF disables skipping regardless of any legacy flag.
+    ACP.Settings:set("workflows.skipIfBuffedDefault", false);
+    lu.assertFalse(Engine:effectiveSkip({ type = "summon", spellID = 688, skipIfBuffed = true }));
+    lu.assertFalse(Engine:effectiveSkip({ type = "cast", spellID = 28189, skipIfBuffed = true }));
+    lu.assertFalse(Engine:effectiveSkip({ type = "createItem", spellID = 27230, itemID = 22105, skipIfBuffed = true }));
+
+    -- Cleanup
+    ACP.Settings:set("workflows.skipIfBuffedDefault", savedSetting);
     Engine:reset();
 end
 
@@ -1279,7 +1309,7 @@ function testPreClickStartsSlotAndArmsFirstStep()
     local savedDef = ACP.Settings.WorkflowData.definitions[1];
     ACP.Settings.WorkflowData.definitions[1] = {
         enabled = true, name = "one-press", steps = {
-            { type = "cast", spellID = 5697, target = "player", skipIfBuffed = true },
+            { type = "cast", spellID = 5697, target = "player" },
         },
     };
 

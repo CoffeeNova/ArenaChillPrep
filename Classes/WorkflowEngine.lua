@@ -168,8 +168,8 @@ local C = ACP.Data.Constants;
 --- Per-step-type dispatch (W9): one lookup replaces the old multi-site
 --- if/elseif chains (executeCurrentStep / isStepGoalMet / effectiveSkip /
 --- checkGates). `run` executes the step; `goalMet` reports whether its goal
---- is already met (skip-if-buffed); `skippable` opts into the global skip
---- default; `needsKnownSpell` gates the player-spell check; `petDoneAware`
+--- is already met (skip-completed); `skippable` opts into the global
+--- "skip completed steps" setting; `needsKnownSpell` gates the player-spell check; `petDoneAware`
 --- consumes the petStepDone flag; `petExempt` exempts the step from the
 --- player-casting/movement gates. Handlers live in the extracted step
 --- modules — the old if/elseif chain is preserved in git history
@@ -524,9 +524,10 @@ function WorkflowEngine:isAlreadySummoned(step)
     return id ~= nil and tonumber(id) == petEntry;
 end
 
---- Whether a step's goal is already met (so a skipIfBuffed step can be skipped
---- without casting). Buff steps → aura present; summon → pet already out;
---- createItem → product already in bags. Per-type via the dispatch table (W9).
+--- Whether a step's goal is already met (so a skip-completed step can be
+--- skipped without casting). Buff steps → aura present; summon → pet already
+--- out; createItem → product already in bags. Per-type via the dispatch table
+--- (W9).
 ---@param step table
 ---@return boolean
 function WorkflowEngine:isStepGoalMet(step)
@@ -539,25 +540,15 @@ function WorkflowEngine:isStepGoalMet(step)
     return false;
 end
 
---- Whether a step should skip when its goal is already met. The global
+--- Whether a step should skip when its goal is already met. The GLOBAL
 --- "skip completed steps" setting (`workflows.skipIfBuffedDefault`) is the
---- master switch for `cast` (buff) / `summon` / `createItem` steps, so it
---- governs existing workflows whose steps were saved without an explicit flag
---- (the user's complaint: a summoned pet / conjured item should not be
---- re-done just because the per-step flag was never set). An explicit per-step
---- `skipIfBuffed` overrides the setting: `false` never skips, `true` always
---- skips.
+--- master switch for `cast` (buff) / `summon` / `createItem` steps. The
+--- per-step `skipIfBuffed` override was REMOVED (2026-08-25) — the setting
+--- alone governs skipping; stale `skipIfBuffed` fields in saved data are
+--- ignored.
 ---@param step table
 ---@return boolean
 function WorkflowEngine:effectiveSkip(step)
-    if (step.skipIfBuffed == false) then
-        return false;
-    end
-
-    if (step.skipIfBuffed == true) then
-        return true;
-    end
-
     local handler = STEP_DISPATCH[step.type];
 
     if (handler and handler.skippable) then
@@ -690,11 +681,11 @@ function WorkflowEngine:executeCurrentStep()
 
     ACP.Events:fire("ACP_WORKFLOW_STEP", self.currentSlot, self.stepIndex, step);
 
-    -- skipIfBuffed → skip WITHOUT casting when the step's goal is already met
-    -- (buff present, pet already summoned, or item already in bags). Checked
-    -- before the gates so a met goal is honored even when a reagent/combat gate
-    -- would otherwise pause the step (no point conjuring a stone you already
-    -- have, or summoning a pet that is already out).
+    -- Skip-completed (global setting) → skip WITHOUT casting when the step's
+    -- goal is already met (buff present, pet already summoned, or item already
+    -- in bags). Checked before the gates so a met goal is honored even when a
+    -- reagent/combat gate would otherwise pause the step (no point conjuring a
+    -- stone you already have, or summoning a pet that is already out).
     if (self:effectiveSkip(step) and self:isStepGoalMet(step)) then
         ACP:debugPrint(ACP.L.workflow.stepSkippedDone, self.stepIndex);
         self:advance();

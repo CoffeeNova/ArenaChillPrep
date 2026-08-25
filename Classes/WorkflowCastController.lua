@@ -50,8 +50,8 @@ function WorkflowCastController:castSpell(engine, step)
     local name = engine:spellName(castSpellID);
     local entry = engine:getCatalogEntry(castSpellID);
 
-    -- Already has the buff and the step is set to skip: the goal state is met
-    -- — no key press needed.
+    -- Already has the buff and skip-completed is enabled: the goal state is
+    -- met — no key press needed.
     if (entry and entry.buffSpellID and engine:effectiveSkip(step) and engine:isAlreadyBuffed(step)) then
         engine:advance();
         return;

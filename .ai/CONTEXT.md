@@ -259,7 +259,8 @@ subcategories (built with `Settings.RegisterCanvasLayoutSubcategory` — the leg
   shown ONLY in the editable Key field below — no duplicate status strings; when the global
   engine is OFF it explains why and offers an "Enable workflow engine" CTA button — the tab
   does NOT gray out), a **Workflow defaults** block (`skipIfBuffedDefault` + short
-  description; movement pause is always enforced and is not configurable), a **Workflow
+  description — the master switch for skipping already-completed steps; the per-step "Skip
+  if done" flag was REMOVED 2026-08-25; movement pause is always enforced and is not configurable), a **Workflow
   editor** block (labeled `Workflow:` selector + `+ Add`/`Clone`/`Delete` buttons,
   `Name:` input + `Enabled`
   checkbox, `Key:`   keybind capture + `Clear` button with unbound/capturing/bound visual
@@ -270,11 +271,11 @@ subcategories (built with `Settings.RegisterCanvasLayoutSubcategory` — the leg
   spell/item from the same catalog as "+ Add step" to REPLACE the step in place (the row
   keeps its position; the new step is rebuilt by the factory and gets its own defaults;
   the dropdown is sized to the longest supported label so it never spills into the Target
-  column), fixed Target and "Skip if buffed" columns that render an explicit
+  column), a fixed Target column that renders an explicit
   `Not available` state when a parameter does not apply, right-aligned `↑`/`↓`/`Delete`
-  actions). `equipItem` rows show the item name instead (no rank/target/skip). The
-  per-step `SpellID:`/`ItemID:` metadata line and the "pet ability" hint were REMOVED as
-  redundant (2026-08-24). "+ Add step" lists each spell as a
+  actions). `equipItem` rows show the item name instead (no rank/target). The
+  per-step `SpellID:`/`ItemID:` metadata line, the "pet ability" hint and the "Skip if
+  done" column were REMOVED as redundant (2026-08-24 / 2026-08-25). "+ Add step" lists each spell as a
   plain name (no rank/SpellID decoration) grouped by category, built from the STATIC
   Warlock catalog (the live spellbook scan was REMOVED — gotcha #20; the class-gated
   catalog rebuilds on PLAYER_LOGIN + SPELLS_CHANGED);

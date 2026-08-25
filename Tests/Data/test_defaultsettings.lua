@@ -79,7 +79,7 @@ function testDefaultsWorkflow1Macro()
     lu.assertEquals(def.steps[17].spellName, "Sacrifice");
     lu.assertEquals(def.steps[17].spellID, 7812);
     lu.assertEquals(def.steps[18].spellID, 19028);
-    lu.assertEquals(def.steps[18].skipIfBuffed, true);
+    lu.assertNil(def.steps[18].skipIfBuffed); -- no per-step flag (removed 2026-08-25)
     lu.assertEquals(def.steps[19].spellID, 28610);
 end
 
@@ -93,7 +93,7 @@ function testDefaultsWorkflow2Macro()
     lu.assertEquals(def.name, "2s no sacrifice");
     lu.assertEquals(#def.steps, 15);
     lu.assertEquals(def.steps[1].spellID, 688);
-    lu.assertEquals(def.steps[1].skipIfBuffed, true);
+    lu.assertNil(def.steps[1].skipIfBuffed); -- no per-step flag (removed 2026-08-25)
     lu.assertEquals(def.steps[6].type, "summon");
     lu.assertEquals(def.steps[6].spellID, 691);
     lu.assertEquals(def.steps[10].type, "equipItem");

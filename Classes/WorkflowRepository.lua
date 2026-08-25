@@ -216,9 +216,9 @@ end
 
 --- Build a new step from a catalog entry (STEP FACTORY — the business rules
 --- the UI used to re-derive): the step type from the category, the default
---- target ("player" for cast steps and party-castable pet steps), the
---- per-step skip flag from the global "skip already-completed steps" default
---- (buff/summon/createItem steps only), and the product itemID.
+--- target ("player" for cast steps and party-castable pet steps), and the
+--- product itemID. No per-step skip flag is stored (removed 2026-08-25 —
+--- skipping is governed by the global `workflows.skipIfBuffedDefault`).
 ---@param entry table
 ---@param group table|nil  the spellbook group (for the name fallback)
 ---@return table step
@@ -236,15 +236,6 @@ function WorkflowRepository:buildStep(entry, group)
 
     if (stepType == C.WORKFLOW_STEP_CAST or (stepType == C.WORKFLOW_STEP_PET and entry.canTargetParty)) then
         step.target = "player";
-    end
-
-    -- New buff-cast, summon and createItem steps default their skip flag to the
-    -- global "skip already-completed steps" setting. A buff step only gets the
-    -- flag when its cast actually applies a tracked buff (entry.buffSpellID).
-    if ((stepType == C.WORKFLOW_STEP_CAST and entry.buffSpellID)
-        or stepType == C.WORKFLOW_STEP_SUMMON
-        or stepType == C.WORKFLOW_STEP_CREATE_ITEM) then
-        step.skipIfBuffed = ACP.Settings:get("workflows.skipIfBuffedDefault") == true;
     end
 
     if (entry.itemID) then

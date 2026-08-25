@@ -78,7 +78,7 @@ function testBuildStepCastBuff()
     lu.assertEquals(step.type, "cast");
     lu.assertEquals(step.spellID, 28176);
     lu.assertEquals(step.target, "player");
-    lu.assertEquals(step.skipIfBuffed, true); -- skipIfBuffedDefault is true
+    lu.assertNil(step.skipIfBuffed); -- no per-step flag (removed 2026-08-25)
 end
 
 function testBuildStepSummon()
@@ -87,7 +87,7 @@ function testBuildStepSummon()
     local step = Repo:buildStep(entry, nil);
     lu.assertEquals(step.type, "summon");
     lu.assertNil(step.target);
-    lu.assertEquals(step.skipIfBuffed, true);
+    lu.assertNil(step.skipIfBuffed);
 end
 
 function testBuildStepCreateItem()
@@ -96,7 +96,7 @@ function testBuildStepCreateItem()
     local step = Repo:buildStep(entry, nil);
     lu.assertEquals(step.type, "createItem");
     lu.assertEquals(step.itemID, 22105);
-    lu.assertEquals(step.skipIfBuffed, true);
+    lu.assertNil(step.skipIfBuffed);
 end
 
 function testBuildStepPetPartyCastable()
@@ -198,7 +198,7 @@ function testCloneWorkflow()
     ACP.Settings:set("workflows.definitions.1", {
         enabled = true,
         name = "2s full prep",
-        steps = { { type = "cast", spellID = 688, target = "player", skipIfBuffed = true } }
+        steps = { { type = "cast", spellID = 688, target = "player" } }
     });
     local slot = Repo:cloneWorkflow(1);
     lu.assertEquals(slot, 6);

@@ -30,10 +30,10 @@ ACP.Data.DefaultSettings = {
     workflows = {
         enabled = true, -- Master workflow switch (General tab).
         slotCount = 5, -- How many slots are visible initially; the UI can add more.
-        skipIfBuffedDefault = true, -- Default skipIfBuffed for new buff steps.
+        skipIfBuffedDefault = true, -- Master switch: skip cast/summon/createItem steps whose goal is already met (no per-step flag, 2026-08-25).
         definitions = {
-            -- Step schema: { type, spellID, spellName?, target?, skipIfBuffed?,
-            -- itemID? } (+ { type="equipItem", itemID, itemName? }).
+            -- Step schema: { type, spellID, spellName?, target?, itemID? }
+            -- (+ { type="equipItem", itemID, itemName? }).
             --
             -- Slots 1-5 are the five battle-tested Warlock arena-prep workflows
             -- used and verified by the author (2s/3s/5s, with/without
@@ -99,31 +99,26 @@ ACP.Data.DefaultSettings = {
                         type = "cast",
                         target = "player",
                         spellName = "Fel Armor",
-                        skipIfBuffed = true,
                         spellID = 28189
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "cast",
                         target = "party1",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "party1",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "summon",
@@ -137,13 +132,11 @@ ACP.Data.DefaultSettings = {
                         type = "cast",
                         target = "player",
                         spellName = "Soul Link",
-                        skipIfBuffed = true,
                         spellID = 19028
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Shadow Ward",
-                        skipIfBuffed = true,
                         spellID = 28610
                     }
                 }
@@ -155,19 +148,16 @@ ACP.Data.DefaultSettings = {
                     {
                         type = "summon",
                         spellName = "Summon Imp",
-                        skipIfBuffed = true,
                         spellID = 688
                     }, {
                         type = "createItem",
                         spellName = "Create Healthstone",
                         itemID = 22105,
-                        skipIfBuffed = true,
                         spellID = 27230
                     }, {
                         type = "createItem",
                         spellName = "Create Healthstone",
                         itemID = 19012,
-                        skipIfBuffed = true,
                         spellID = 11730
                     }, {
                         type = "pet",
@@ -182,25 +172,21 @@ ACP.Data.DefaultSettings = {
                     }, {
                         type = "summon",
                         spellName = "Summon Felhunter",
-                        skipIfBuffed = true,
                         spellID = 691
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Soul Link",
-                        skipIfBuffed = true,
                         spellID = 19028
                     }, {
                         type = "createItem",
                         spellName = "Create Spellstone",
                         itemID = 22646,
-                        skipIfBuffed = true,
                         spellID = 28172
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Fel Armor",
-                        skipIfBuffed = true,
                         spellID = 28189
                     }, {
                         type = "equipItem",
@@ -210,31 +196,26 @@ ACP.Data.DefaultSettings = {
                         type = "cast",
                         target = "player",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "cast",
                         target = "party1",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "party1",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Shadow Ward",
-                        skipIfBuffed = true,
                         spellID = 28610
                     }
                 }
@@ -246,7 +227,6 @@ ACP.Data.DefaultSettings = {
                     {
                         type = "summon",
                         spellName = "Summon Imp",
-                        skipIfBuffed = true,
                         spellID = 688
                     }, {
                         type = "cast",
@@ -271,31 +251,26 @@ ACP.Data.DefaultSettings = {
                     }, {
                         type = "summon",
                         spellName = "Summon Voidwalker",
-                        skipIfBuffed = true,
                         spellID = 697
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Fel Armor",
-                        skipIfBuffed = true,
                         spellID = 28189
                     }, {
                         type = "createItem",
                         spellName = "Create Spellstone",
                         itemID = 22646,
-                        skipIfBuffed = true,
                         spellID = 28172
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "equipItem",
@@ -305,30 +280,25 @@ ACP.Data.DefaultSettings = {
                         type = "cast",
                         target = "party1",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "party1",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "cast",
                         target = "party2",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "party2",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "summon",
                         spellName = "Summon Felhunter",
-                        skipIfBuffed = true,
                         spellID = 691
                     }, {
                         type = "pet",
@@ -338,13 +308,11 @@ ACP.Data.DefaultSettings = {
                         type = "cast",
                         target = "player",
                         spellName = "Soul Link",
-                        skipIfBuffed = true,
                         spellID = 19028
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Shadow Ward",
-                        skipIfBuffed = true,
                         spellID = 28610
                     }
                 }
@@ -356,7 +324,6 @@ ACP.Data.DefaultSettings = {
                     {
                         type = "summon",
                         spellName = "Summon Imp",
-                        skipIfBuffed = true,
                         spellID = 688
                     }, {
                         type = "cast",
@@ -381,25 +348,21 @@ ACP.Data.DefaultSettings = {
                     }, {
                         type = "summon",
                         spellName = "Summon Felhunter",
-                        skipIfBuffed = true,
                         spellID = 691
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Soul Link",
-                        skipIfBuffed = true,
                         spellID = 19028
                     }, {
                         type = "createItem",
                         spellName = "Create Spellstone",
                         itemID = 22646,
-                        skipIfBuffed = true,
                         spellID = 28172
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Fel Armor",
-                        skipIfBuffed = true,
                         spellID = 28189
                     }, {
                         type = "equipItem",
@@ -409,43 +372,36 @@ ACP.Data.DefaultSettings = {
                         type = "cast",
                         target = "player",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "cast",
                         target = "party1",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "party1",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "cast",
                         target = "party2",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "party2",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Shadow Ward",
-                        skipIfBuffed = true,
                         spellID = 28610
                     }
                 }
@@ -457,7 +413,6 @@ ACP.Data.DefaultSettings = {
                     {
                         type = "summon",
                         spellName = "Summon Imp",
-                        skipIfBuffed = true,
                         spellID = 688
                     }, {
                         type = "cast",
@@ -482,25 +437,21 @@ ACP.Data.DefaultSettings = {
                     }, {
                         type = "summon",
                         spellName = "Summon Felhunter",
-                        skipIfBuffed = true,
                         spellID = 691
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Soul Link",
-                        skipIfBuffed = true,
                         spellID = 19028
                     }, {
                         type = "createItem",
                         spellName = "Create Spellstone",
                         itemID = 22646,
-                        skipIfBuffed = true,
                         spellID = 28172
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Fel Armor",
-                        skipIfBuffed = true,
                         spellID = 28189
                     }, {
                         type = "equipItem",
@@ -510,67 +461,56 @@ ACP.Data.DefaultSettings = {
                         type = "cast",
                         target = "player",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "cast",
                         target = "party1",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "party1",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "cast",
                         target = "party2",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "party2",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "cast",
                         target = "party3",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "party3",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "cast",
                         target = "party4",
                         spellName = "Detect Invisibility",
-                        skipIfBuffed = true,
                         spellID = 132
                     }, {
                         type = "cast",
                         target = "party4",
                         spellName = "Unending Breath",
-                        skipIfBuffed = true,
                         spellID = 5697
                     }, {
                         type = "cast",
                         target = "player",
                         spellName = "Shadow Ward",
-                        skipIfBuffed = true,
                         spellID = 28610
                     }
                 }
