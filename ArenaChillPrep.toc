@@ -7,6 +7,7 @@
 ## SavedVariables: ArenaChillPrepDB
 ## SavedVariablesPerCharacter: ArenaChillPrepCharDB
 ## DefaultState: enabled
+## IconTexture: Interface\AddOns\ArenaChillPrep\Textures\icon.tga
 
 # Load order matters: no libraries, so bootstrap first, then Data/Utils, then Classes.
 # Every file receives the shared ACP table through the `...` vararg chain

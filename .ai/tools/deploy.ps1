@@ -66,6 +66,26 @@ if (Test-Path $license) { $files += $license }
 $bindingsXml = Join-Path $repoRoot "Bindings.xml"
 if (Test-Path $bindingsXml) { $files += $bindingsXml }
 
+# The addon icon (`## IconTexture:` in the TOC) is a `##` directive, so it never
+# appears in the TOC's file list above. The client resolves it to a .tga / .blp
+# texture at runtime, but the file must still be shipped in the package. Working
+# addons reference it as a full `Interface\AddOns\ArenaChillPrep\...` path (with
+# or without extension). Resolve and add it here so deploy/-Bundle stay complete.
+$iconRef = (Get-Content $toc.FullName | Where-Object { $_ -match '^##\s*IconTexture:\s*(.+)$' } |
+    ForEach-Object { $Matches[1].Trim() } | Select-Object -First 1)
+if ($iconRef) {
+    # Normalize to a repo-relative path and strip a leading
+    # "Interface\AddOns\ArenaChillPrep\" or "Interface\AddOns\" prefix.
+    $rel = $iconRef -replace '\\', '/' -replace '^Interface/AddOns/(ArenaChillPrep/|)', ''
+    $relBase = $rel -replace '\.(tga|blp|png)$', ''
+    $foundIcon = $false
+    foreach ($ext in @("tga", "blp")) {
+        $iconPath = Join-Path $repoRoot ($relBase + "." + $ext)
+        if (Test-Path $iconPath) { $files += $iconPath; $foundIcon = $true; break }
+    }
+    if (-not $foundIcon) { Write-Warning ("IconTexture references missing texture: {0} (.tga/.blp)" -f $iconRef) }
+}
+
 if ($files.Count -eq 0) { throw "No files to deploy (empty TOC?)" }
 
 # --- Version from the TOC ----------------------------------------------------
