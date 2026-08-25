@@ -48,6 +48,7 @@ Classes/WorkflowItemSteps.lua
 Classes/WorkflowBindings.lua
 Classes/UI/Widgets.lua
 Classes/UI/WorkflowUI.lua
+Classes/UI/Welcome.lua
 Classes/OptionsUI.lua
 
 # Bindings.xml (Key Bindings entries) is NOT listed here: on 20506 the client

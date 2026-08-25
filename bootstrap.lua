@@ -83,6 +83,7 @@ function ACP:_init()
     self.DeliveryController:_init();
     self.WorkflowBindings:_init();
     self.OptionsUI:_init();
+    self.Welcome:_init();
 
     -- Handle /reload inside an arena.
     self.ArenaPrep:checkNow();

@@ -9,6 +9,7 @@ ACP.Data = ACP.Data or {};
 ---@class DefaultSettings
 ACP.Data.DefaultSettings = {
     enabled = true, -- Master switch.
+    welcomeSeen = false, -- First-run welcome popup was shown (account-wide).
     noTradeSameClass = true, -- Skip auto-trade to teammates of the player's own class.
     tradeDelay = 1.5, -- Seconds between the item appearing and opening the trade.
     tradeRetries = 0, -- How many times to silently re-offer a failed trade (Cancel pressed, etc.) before giving up.

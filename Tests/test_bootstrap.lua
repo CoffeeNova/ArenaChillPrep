@@ -49,7 +49,7 @@ function testBootstrapInitRunsModules()
     ACP._initialized = false;
     local order = {};
     local orig = {};
-    for _, name in ipairs({ "Events", "Settings", "ArenaPrep", "Inventory", "TradeManager", "WorkflowEngine", "DeliveryController", "WorkflowBindings", "OptionsUI" }) do
+    for _, name in ipairs({ "Events", "Settings", "ArenaPrep", "Inventory", "TradeManager", "WorkflowEngine", "DeliveryController", "WorkflowBindings", "OptionsUI", "Welcome" }) do
         orig[name] = ACP[name]._init;
         ACP[name]._init = function(self)
             table.insert(order, name);
@@ -60,7 +60,7 @@ function testBootstrapInitRunsModules()
     -- Act
     ACP:_init();
     -- Assert
-    lu.assertEquals(order, { "Events", "Settings", "ArenaPrep", "Inventory", "TradeManager", "WorkflowEngine", "DeliveryController", "WorkflowBindings", "OptionsUI" });
+    lu.assertEquals(order, { "Events", "Settings", "ArenaPrep", "Inventory", "TradeManager", "WorkflowEngine", "DeliveryController", "WorkflowBindings", "OptionsUI", "Welcome" });
     lu.assertIsTrue(ACP._initialized);
     -- restore
     for name, fn in pairs(orig) do ACP[name]._init = fn; end

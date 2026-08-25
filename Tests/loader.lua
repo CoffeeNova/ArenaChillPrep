@@ -42,6 +42,7 @@ load("Classes/PetAbilityCaster.lua");
 load("Classes/WorkflowItemSteps.lua");
 load("Classes/WorkflowBindings.lua");
 load("Classes/UI/Widgets.lua");
+load("Classes/UI/Welcome.lua");
 load("Classes/OptionsUI.lua");
 
 return ACP;

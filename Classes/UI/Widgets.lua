@@ -9,7 +9,6 @@
 --     is built manually;
 --   * UIDropDownMenuTemplate / InputBoxTemplate name their children from the
 --     frame name — every dropdown/input needs a unique global name.
-
 ---@type ACP
 local _, ACP = ...;
 
@@ -49,7 +48,12 @@ local BOX_BACKGROUND = {
     bgFile = "Interface\\Buttons\\WHITE8x8",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     edgeSize = 14,
-    insets = { left = 6, right = 6, top = 6, bottom = 6 },
+    insets = {
+        left = 6,
+        right = 6,
+        top = 6,
+        bottom = 6
+    }
 };
 
 local HEADER_R = 1;
@@ -137,7 +141,7 @@ function UI.Divider(parent, x, y, w)
     divider:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y);
     divider:SetSize(w, 2);
     divider:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
+        bgFile = "Interface\\Buttons\\WHITE8x8"
     });
     divider:SetBackdropColor(1, 1, 1, 0.3);
     return divider;
@@ -354,8 +358,12 @@ function UI.Dropdown(parent, name, text, x, y, width, items, getter, setter, too
         -- Re-run the initializer (re-applies checked state + collapsed label).
         UIDropDownMenu_Refresh(dd, 1, 1);
         applyLabel();
-    end;
+    end
     dd.Refresh();
+
+    dd:HookScript("OnShow", function()
+        applyLabel();
+    end);
 
     attachTooltip(dd, tooltipText);
 
@@ -438,7 +446,7 @@ function UI.Keybind(parent, name, text, x, y, w, h, getter, setter, tooltipText,
         LCTRL = true,
         RCTRL = true,
         LALT = true,
-        RALT = true,
+        RALT = true
     };
 
     local function refresh()
@@ -588,7 +596,8 @@ end
 function UI.ScrollFrame(parent, x, y, w, h)
     scrollCounter = scrollCounter + 1;
 
-    local sf = CreateFrame("ScrollFrame", ("ACPUI_Scroll%d"):format(scrollCounter), parent, "UIPanelScrollFrameTemplate");
+    local sf =
+        CreateFrame("ScrollFrame", ("ACPUI_Scroll%d"):format(scrollCounter), parent, "UIPanelScrollFrameTemplate");
     sf:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y);
     sf:SetSize(w, h);
 

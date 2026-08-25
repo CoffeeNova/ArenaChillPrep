@@ -93,6 +93,7 @@ ArenaChillPrep/
 │   │   │                     #   Checkbox/Slider/Button/StatusLine/Dropdown/TextInput/
 │   │   │                     #   ScrollFrame + geometry constants)
 │   │   └── WorkflowUI.lua    # "Workflows" subcategory content — pure layout/render
+│   │   └── Welcome.lua       # First-run welcome popup (Warlock-only, once per account)
 │   └── OptionsUI.lua         # Interface Options panel + /acp slash command
 └── Utils/                    # Utilities
     ├── Items.lua             # Item helpers (find by ID, counters, bag search)
@@ -319,6 +320,7 @@ subcategories (built with `Settings.RegisterCanvasLayoutSubcategory` — the leg
 ```lua
 ArenaChillPrepDB = {
     enabled        = true,   -- master switch
+    welcomeSeen    = false,  -- first-run welcome popup shown (account-wide)
     partnerMode    = "auto", -- "auto" | "party1" (explicit party slot)
     manualPartner  = "party1",
     tradeDelay     = 1.5,    -- seconds between item appearing and opening the trade
@@ -344,6 +346,39 @@ Account-wide settings remain in `ArenaChillPrepDB`; workflow settings are routed
 `ArenaChillPrepDB.workflows` table on first load. `workflows.slotCount` starts at 5; new
 slots are created empty. `WORKFLOW_MAX_SLOTS` is the fixed binding capacity, while the UI
 only renders slots up to the current character's `slotCount`.
+
+### First-run welcome popup (2026-08-25)
+
+On `PLAYER_LOGIN`, if `welcomeSeen` is falsy (fresh install **or** first login after an
+update — the flag defaults to `false` and is deep-merged) and the character is a Warlock,
+`ACP.Welcome` (Classes/UI/Welcome.lua) shows a centered popup: the addon icon
+(`Interface\AddOns\ArenaChillPrep\Textures\icon.tga`, 128×128), the title, two very short
+feature lines and two buttons. **Non-Warlocks never see the popup** (the addon is
+Warlock-only — their flow is the Compatibility page). Text is deliberately minimal (see
+`Data/Localization.lua` `welcomeLine1/2`, `welcomeCta`, `welcomeLater`).
+
+- **CTA ("Set up key")** dismisses the popup (sets `welcomeSeen = true`), opens the
+  Interface Options panel on the **Workflows** subcategory (`OptionsUI:openPanel("Workflows")`)
+  and highlights the **Key** capture button of workflow slot 1: a pulsing gold ring
+  (`Utils.Timers` ticker, active-flag guarded) around `WorkflowUI.Controls.keybind` +
+  **auto-start of the key capture** — the player just presses a key. The pulse KEEPS
+  running while the capture is armed (stopping it on `IsCapturing` self-killed the ring
+  0.4 s after the CTA — the "nothing happened" bug) and stops only when the key is bound,
+  when the settings window closes, or after 20 s.
+- **Key button toggle gotcha (fixed 2026-08-25):** the Key widget is a TOGGLE — clicking
+  it while the capture is armed STOPS the capture. Auto-arming + the player's natural
+  "click the highlighted button, then press a key" left the capture off and the key press
+  went to the game. The capture is armed on the first pulse tick (0.4 s — the panel has
+  settled) and RE-ARMED via an `OnClick` hook whenever a click toggles it off while the
+  pulse is active; Escape deliberately cancels the capture (no re-arm). Closing the
+  settings window stops the pulse and drops a still-armed capture (`InterfaceOptionsFrame`
+  OnHide hook), so a manual `/acp` reopen starts clean. If slot 1 already has a key, the
+  highlight/capture are skipped and a chat line says so (`L.welcomeKeyAlreadyBound`).
+- **"Later"** (and Escape) just dismisses the popup. Dismissing writes the flag to
+  SavedVariables immediately; it persists on the next save.
+- The popup frame is built lazily on first show; `welcomeSeen` is account-wide
+  (`ArenaChillPrepDB`), so it shows once per account, not per character.
+
 The workflows branch merges **per-slot replace** (a saved `definitions[N]` wins wholesale —
 deepMerge would index-merge the steps arrays into hybrids), `ensureDefaults` is array-aware,
 and saved definitions that still match the OLD placeholder defaults exactly are replaced by

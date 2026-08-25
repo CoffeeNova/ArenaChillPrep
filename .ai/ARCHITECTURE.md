@@ -59,6 +59,7 @@ graph TD
         O[Classes/OptionsUI.lua]
         W[Classes/UI/Widgets.lua]
         WUI[Classes/UI/WorkflowUI.lua]
+        WEL[Classes/UI/Welcome.lua]
     end
 
     B --> E
@@ -71,6 +72,8 @@ graph TD
     B --> O
     O --> W
     O --> WUI
+    B --> WEL
+    WEL --> O
 
     E --> AP
     E --> INV
@@ -122,9 +125,10 @@ graph TD
   6. `ACP.Inventory:_init()`
   7. `ACP.TradeManager:_init()`
   8. `ACP.WorkflowEngine:_init()` — secure cast buttons + bindings
-  9. `ACP.DeliveryController:_init()`
-  10. `ACP.WorkflowBindings:_init()`
-  11. `ACP.OptionsUI:_init()`
+   9. `ACP.DeliveryController:_init()`
+   10. `ACP.WorkflowBindings:_init()`
+   11. `ACP.OptionsUI:_init()`
+   12. `ACP.Welcome:_init()` — first-run welcome popup (Warlock-only)
 - `WorkflowRepository`, `TradePlanner`, `StateMachine` and `Preconditions` are **init-free** (pure helpers/mixins — no event subscriptions, no state).
 - Right after initialization it runs an initial state check (`ArenaPrep:checkNow()`), to catch the case where the buff is already active when the addon loads (e.g., after `/reload` in an arena).
 
@@ -368,6 +372,46 @@ ACP.UI.ScrollFrame(parent, x, y, w, h)            -- returns sf with .ScrollChil
 - Slash command `/acp` (see `.ai/CONTEXT.md`) + `SLASH_ACP1`.
 - All changes — instantly through `Settings:set`; account settings persist in `ArenaChillPrepDB`, workflow settings in `ArenaChillPrepCharDB.workflows`. "Reset to defaults" resets both scopes and re-syncs the panel via `refresh()`.
 - The `Settings` module init order (Settings → WorkflowSpellbook → ... → OptionsUI) is unchanged; `WorkflowSpellbook.lua` loads before `WorkflowEngine.lua`, and `WorkflowUI.lua` loads after `Widgets.lua` and before `OptionsUI.lua`.
+- `OptionsUI:openPanel(key?)` accepts an optional subcategory key (default: the first
+  subcategory) so callers can land on a specific tab — `ACP.Welcome` opens the panel on
+  **Workflows** (`Settings.OpenToCategory(subCategoryID)`).
+
+**`Classes/UI/Welcome.lua`** — first-run welcome popup (`ACP.Welcome`, pure UI, no
+settings logic of its own):
+
+- `_init()` registers `PLAYER_LOGIN` via the event bus; the callback shows the popup only
+  when the character is a Warlock (`OptionsUI:isSupportedClass()`) and
+  `Settings:get("welcomeSeen")` is falsy (fresh install or first login after an update —
+  the flag defaults to `false` and is deep-merged into `ArenaChillPrepDB`). Non-Warlocks
+  never see the popup.
+- The frame (`ACPWelcomeFrame`, BackdropTemplate, `DIALOG` strata, centered) is built
+  lazily on first show: the addon icon (`Interface\AddOns\ArenaChillPrep\Textures\icon.tga`,
+  128×128), the title and two very short feature lines (`L.welcomeLine1/2` — text is
+  deliberately minimal), a primary CTA (`L.welcomeCta`) and a "Later" button
+  (`L.welcomeLater`). Escape closes it via a hidden off-screen EditBox (the same
+  key-capture pattern as `UI.Keybind` — a Button cannot hold focus on 2.5.5).
+- **CTA flow:** dismisses the popup (`Settings:set("welcomeSeen", true)`), opens the
+  settings panel on the **Workflows** tab (`OptionsUI:openPanel("Workflows")`) and
+  highlights the Key-capture button of workflow slot 1 (`WorkflowUI.Controls.keybind`):
+  a pulsing gold ring frame (BackdropTemplate edge `UI-Tooltip-Border`, frame level +2,
+  `Utils.Timers:interval` with the active-flag guard) **plus** `keybind.StartCapture()` —
+  the player just presses their hotkey. The pulse stops when the key is bound
+  (`keybind.HasBinding()` — deliberately NOT on `IsCapturing`: the CTA arms the capture
+  itself, so an IsCapturing stop condition self-killed the ring 0.4 s after the CTA,
+  the "nothing happened" bug) or after a 20 s timeout (`Utils.Timers:after`); the timers
+  use the named-entry pattern so a late C_Timer tick is a no-op.
+- **Key-toggle gotcha (fixed 2026-08-25):** the Key widget is a TOGGLE — clicking it
+  while armed STOPS the capture, so auto-arm + "click the highlighted button, then press
+  a key" left the capture off (the player could not assign anything). The capture is now
+  armed on the first pulse tick (0.4 s — the opening panel can no longer steal focus) and
+  re-armed by an `OnClick` hook (0.15 s `Utils.Timers:after`) whenever a click toggled it
+  off while the pulse is active; Escape cancels without re-arm. An
+  `InterfaceOptionsFrame` OnHide hook stops the pulse and drops a still-armed capture, so
+  a manual `/acp` reopen starts clean (no stale pulsing ring, no hidden armed capture that
+  the next click would toggle off). If slot 1 already has a key bound, the
+  highlight/capture are skipped and a chat line prints `L.welcomeKeyAlreadyBound`.
+- "Later"/Escape only dismiss the popup (the flag persists on the next SavedVariables
+  save, so it is shown at most once per account).
 
 ### 2.9 `Data/Items.lua` — item catalog
 

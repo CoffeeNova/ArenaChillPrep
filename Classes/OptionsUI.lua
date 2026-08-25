@@ -672,12 +672,25 @@ function OptionsUI:refresh()
 end
 
 --- Open the options panel (works with both the modern and legacy Settings API).
---- Prefers the General subcategory if registered.
-function OptionsUI:openPanel()
+--- Prefers the General subcategory if registered; `key` picks a specific
+--- subcategory (e.g. "Workflows" — used by the first-run welcome popup).
+---@param key string|nil  subcategory key to land on
+function OptionsUI:openPanel(key)
     local targetID = self.categoryID;
 
-    if (self.Subcategories and self.Subcategories[1] and self.Subcategories[1].subCategoryID) then
-        targetID = self.Subcategories[1].subCategoryID;
+    if (self.Subcategories) then
+        if (key) then
+            for _, sub in ipairs(self.Subcategories) do
+                if (sub.key == key and sub.subCategoryID) then
+                    targetID = sub.subCategoryID;
+                    break;
+                end
+            end
+        end
+
+        if (targetID == self.categoryID and self.Subcategories[1] and self.Subcategories[1].subCategoryID) then
+            targetID = self.Subcategories[1].subCategoryID;
+        end
     end
 
     if (targetID and Settings and Settings.OpenToCategory) then

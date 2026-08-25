@@ -21,6 +21,13 @@ local strings = {
         disabled = "Addon disabled",
         debugToggled = "Debug logging: %s",
 
+        -- First-run welcome popup (Warlock-only, once per account)
+        welcomeLine1 = "Auto-trades healthstones to your partner.",
+        welcomeLine2 = "One key runs your whole prep.",
+        welcomeCta = "Set up key",
+        welcomeLater = "Later",
+        welcomeKeyAlreadyBound = "Workflow 1 already has a key bound (%s) - nothing to set up.",
+
         -- Options panel
         panelTitle = "ArenaChillPrep",
         generalSection = "General",
@@ -191,6 +198,13 @@ local strings = {
         enabled = "Аддон включён",
         disabled = "Аддон выключен",
         debugToggled = "Отладка: %s",
+
+        -- First-run welcome popup (Warlock-only, once per account)
+        welcomeLine1 = "Автоматически передаёт камни здоровья партнёру.",
+        welcomeLine2 = "Одна клавиша — вся подготовка.",
+        welcomeCta = "Назначить клавишу",
+        welcomeLater = "Позже",
+        welcomeKeyAlreadyBound = "У сценария 1 уже назначена клавиша (%s) — настраивать нечего.",
 
         -- Options panel
         panelTitle = "ArenaChillPrep",
