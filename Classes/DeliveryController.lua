@@ -136,12 +136,35 @@ function DeliveryController:findPartner()
     for i = 1, count do
         local unit = "party" .. i;
 
-        if (UnitExists(unit) and not UnitIsUnit(unit, "player") and not self.givenTo[unit]) then
+        if (UnitExists(unit) and not UnitIsUnit(unit, "player") and not self.givenTo[unit]
+            and self:partnerClassAllowed(unit)) then
             return unit;
         end
     end
 
     return nil;
+end
+
+--- Whether auto-trade to `unit` is allowed by the "do not trade to same class"
+--- setting. When the setting is on, teammates of the player's own class are
+--- skipped (e.g. a Warlock won't auto-trade other Warlocks). The setting is
+--- class-agnostic — it always compares against the player's own class.
+---@param unit string
+---@return boolean
+function DeliveryController:partnerClassAllowed(unit)
+    if (ACP.Settings:get("noTradeSameClass") ~= true) then
+        return true;
+    end
+
+    local _, playerClass = UnitClass("player");
+    local _, unitClass = UnitClass(unit);
+
+    if (playerClass and unitClass and playerClass == unitClass) then
+        ACP:debugPrint("skipping trade with %s: same class (%s)", tostring(unit), tostring(playerClass));
+        return false;
+    end
+
+    return true;
 end
 
 --- Are we allowed to start a new trade right now?
@@ -302,6 +325,12 @@ function DeliveryController:shouldTakeOverInboundTrade()
 
     if (partner and not ACP.ArenaPrep:findPartyUnitByName(partner)) then
         ACP:debugPrint("inbound trade with non-teammate %s, not taking over", tostring(partner));
+        return false;
+    end
+
+    -- Respect the "do not trade to same class" setting for inbound trades too.
+    if (partner and not self:partnerClassAllowed(partner)) then
+        ACP:debugPrint("inbound trade with same-class %s, not taking over", tostring(partner));
         return false;
     end
 

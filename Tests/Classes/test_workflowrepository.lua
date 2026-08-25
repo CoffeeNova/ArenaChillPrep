@@ -122,6 +122,7 @@ end
 
 function testAddStepBySpellID()
     resetSettings();
+    local origUnitClass = _G.UnitClass;
     _G.UnitClass = function() return "Warlock", "WARLOCK" end;
     local Spellbook = ACP.WorkflowSpellbook;
     Spellbook:_reset();
@@ -134,6 +135,7 @@ function testAddStepBySpellID()
     lu.assertEquals(step.spellID, 27230);
     Repo:removeStep(1, #steps);
     Spellbook:_reset();
+    _G.UnitClass = origUnitClass;
 end
 
 function testAddStepByGroup()

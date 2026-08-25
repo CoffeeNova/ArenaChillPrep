@@ -11,6 +11,10 @@ local Engine = ACP.WorkflowEngine;
 local Spellbook = ACP.WorkflowSpellbook;
 local H = dofile(_G.__TESTS_ROOT .. "/helpers.lua");
 
+-- Capture the stub's UnitClass so we can restore it after the class-specific
+-- tests below (they override _G.UnitClass and must not leak into later suites).
+local DefaultUnitClass = _G.UnitClass;
+
 local function resetSpellbook()
     Spellbook:_reset();
     Spellbook:mergeStaticWarlock();
@@ -186,6 +190,7 @@ end
 -- bug). The arming block re-points the button at the pet macro.
 function testOnKeyPressedArmsPetStepAndKeepsKeyTakenOver()
     -- Arrange
+    local origUnitClass = _G.UnitClass;
     _G.UnitClass = function() return "Warlock", "WARLOCK" end;
     Spellbook:_reset();
     Spellbook:mergeStaticWarlock();
@@ -237,6 +242,7 @@ function testOnKeyPressedArmsPetStepAndKeepsKeyTakenOver()
     _G.__stub.bindingKeys = nil;
     _G.__stub.bindingActions = nil;
     _G.__stub.overrideClicks = nil;
+    _G.UnitClass = origUnitClass;
 end
 
 -- Regression: a pet-ability macro that does not bake an explicit target only
@@ -798,6 +804,7 @@ end
 -- carry over: the pet step is consumed and the engine lands on the NEXT step.
 function testPetStepPressedDuringCastSurvivesAdvance()
     -- Arrange
+    local origUnitClass = _G.UnitClass;
     _G.UnitClass = function() return "Warlock", "WARLOCK" end;
     Spellbook:_reset();
     Spellbook:mergeStaticWarlock();
@@ -863,6 +870,7 @@ function testPetStepPressedDuringCastSurvivesAdvance()
     _G.__stub.bindingKeys = nil;
     _G.__stub.bindingActions = nil;
     _G.__stub.overrideClicks = nil;
+    _G.UnitClass = origUnitClass;
 end
 
 -- Regression: UNIT_SPELLCAST_SENT and UNIT_SPELLCAST_START both fire for one
@@ -1009,6 +1017,7 @@ end
 -- the effect appears.
 function testPetPressNotAppliedKeepsArmedUntilVerified()
     -- Arrange
+    local origUnitClass = _G.UnitClass;
     _G.UnitClass = function() return "Warlock", "WARLOCK" end;
     Spellbook:_reset();
     Spellbook:mergeStaticWarlock();
@@ -1078,6 +1087,7 @@ function testPetPressNotAppliedKeepsArmedUntilVerified()
     _G.__stub.bindingKeys = nil;
     _G.__stub.bindingActions = nil;
     _G.__stub.overrideClicks = nil;
+    _G.UnitClass = origUnitClass;
 end
 
 -- Regression: Sacrifice verification. The buff signal (the shield on the
@@ -1233,6 +1243,7 @@ end
 -- exists; the pet step then runs standalone after the summon completes.
 function testOnKeyPressedDoesNotArmPetStepWithoutPet()
     -- Arrange
+    local origUnitClass = _G.UnitClass;
     _G.UnitClass = function() return "Warlock", "WARLOCK" end;
     Spellbook:_reset();
     Spellbook:mergeStaticWarlock();
@@ -1284,6 +1295,7 @@ function testOnKeyPressedDoesNotArmPetStepWithoutPet()
     _G.__stub.bindingKeys = nil;
     _G.__stub.bindingActions = nil;
     _G.__stub.overrideClicks = nil;
+    _G.UnitClass = origUnitClass;
 end
 
 -- Regression: the FIRST key press must start the workflow AND begin the first
@@ -1371,3 +1383,6 @@ function testApplySlotBindingsOverridesSecondaryKey()
     _G.__stub.bindingActions = nil;
     _G.__stub.overrideClicks = nil;
 end
+
+-- Restore the stub's UnitClass for subsequent suites (see DefaultUnitClass).
+_G.UnitClass = DefaultUnitClass;

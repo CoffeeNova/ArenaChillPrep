@@ -380,6 +380,17 @@ function OptionsUI:buildAutotrade(content, w, h)
         function(value) setSetting("gateSafetySeconds", value); end,
         L.gateSafetyTooltip);
 
+    -- "Do not trade to <own class>" — skip auto-trade to teammates of the
+    -- player's own class (e.g. other Warlocks). Label is built dynamically so
+    -- it names the player's class.
+    local playerClassName = select(1, UnitClass("player")) or "???";
+    Controls.noTradeSameClass = UI.Checkbox(content, "ACPNoTradeSameClassCheck",
+        (L.noTradeSameClassLabel):format(playerClassName),
+        leftX, leftY - 128 - 16,
+        function() return ACP.Settings:get("noTradeSameClass"); end,
+        function(value) setSetting("noTradeSameClass", value); end,
+        L.noTradeSameClassTooltip);
+
     -- ---- RIGHT COLUMN: ranks ----
     local rightX = leftX + colW + UI.GAP;
     local rightY = -4;
@@ -584,12 +595,23 @@ function OptionsUI:setAutotradeEnabled(flag)
                 slider:Disable();
                 slider:SetAlpha(alpha);
 
-                if (slider.label) then
-                    slider.label:SetAlpha(alpha);
-                end
+            if (slider.label) then
+                slider.label:SetAlpha(alpha);
             end
         end
     end
+
+    -- "Do not trade to <own class>" checkbox follows the master switch.
+    if (Controls.noTradeSameClass) then
+        if (flag) then
+            Controls.noTradeSameClass:Enable();
+            Controls.noTradeSameClass:SetAlpha(1);
+        else
+            Controls.noTradeSameClass:Disable();
+            Controls.noTradeSameClass:SetAlpha(alpha);
+        end
+    end
+end
 end
 
 --- Re-sync all controls from Settings.
@@ -621,6 +643,10 @@ function OptionsUI:refresh()
 
     if (Controls.gateSafety) then
         Controls.gateSafety.Refresh();
+    end
+
+    if (Controls.noTradeSameClass) then
+        Controls.noTradeSameClass:SetChecked(ACP.Settings:get("noTradeSameClass") == true);
     end
 
     if (Controls.workflowsEnabled) then

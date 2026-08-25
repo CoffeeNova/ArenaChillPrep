@@ -69,7 +69,15 @@ _G.UnitGUID = function(unit) return _G.__stub.unitGUID end;
 _G.UnitIsUnit = function() return _G.__stub.unitIsUnit end;
 _G.UnitAffectingCombat = function() return _G.__stub.inCombat end;
 _G.UnitIsDeadOrGhost = function() return _G.__stub.dead end;
-_G.UnitClass = function() return "Warlock", "WARLOCK" end;
+-- The player is a Warlock; party members are a different class so the
+-- "do not trade to same class" default does not block them in unrelated tests.
+-- Same-class tests override this stub locally.
+_G.UnitClass = function(unit)
+    if (unit == "player") then
+        return "Warlock", "WARLOCK";
+    end
+    return "Mage", "MAGE";
+end;
 _G.UnitName = function() return "Player" end;
 _G.GetNumPartyMembers = function() return _G.__stub.partyCount end;
 _G.GetNumArenaOpponents = function() return 0 end;

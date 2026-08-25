@@ -104,11 +104,13 @@ end
 
 function testGetCategories()
     -- Arrange
+    local origUnitClass = _G.UnitClass;
     _G.UnitClass = function() return "Warlock", "WARLOCK" end;
     -- Act
     local categories = DC:getCategories();
     -- Assert
     lu.assertItemsEquals(categories, { "healthstones" });
+    _G.UnitClass = origUnitClass;
 end
 
 function testCategoryReady()
@@ -198,6 +200,35 @@ function testFindPartnerNone()
     local partner = DC:findPartner();
     -- Assert
     lu.assertIsNil(partner);
+end
+
+function testFindPartnerSkipsSameClass()
+    -- Arrange: all party members share the player's class and the
+    -- "do not trade to same class" setting is on → no eligible partner.
+    local origUnitClass = _G.UnitClass;
+    _G.UnitClass = function() return "Warlock", "WARLOCK" end;
+    State.PartyCount = 2;
+    DC.givenTo = {};
+    installStubs();
+    ACP.Settings:set("noTradeSameClass", true);
+    -- Act
+    local partner = DC:findPartner();
+    -- Assert
+    lu.assertIsNil(partner);
+    _G.UnitClass = origUnitClass;
+end
+
+function testFindPartnerSameClassAllowedWhenDisabled()
+    -- Arrange: same setup but the setting is off → partners are eligible.
+    State.PartyCount = 2;
+    DC.givenTo = {};
+    installStubs();
+    ACP.Settings:set("noTradeSameClass", false);
+    -- Act
+    local partner = DC:findPartner();
+    -- Assert
+    lu.assertEquals(partner, "party1");
+    ACP.Settings:set("noTradeSameClass", true);
 end
 
 function testCanStartTrade()
@@ -503,6 +534,7 @@ function testShouldTakeOverInboundTrade()
     State.InCombat = false;
     installStubs();
     resetController();
+    ACP.Settings:set("noTradeSameClass", false);
     DC:setState("ACTIVE");
     _G.UnitName = function(unit)
         if (unit == "party1") then return "Alice"; end
@@ -513,7 +545,34 @@ function testShouldTakeOverInboundTrade()
     local ok = DC:shouldTakeOverInboundTrade();
     -- Assert
     lu.assertIsTrue(ok);
+    ACP.Settings:set("noTradeSameClass", true);
     _G.UnitName = function() return "Player" end;
+end
+
+function testShouldTakeOverInboundTradeSameClassBlocked()
+    -- Arrange
+    local origUnitClass = _G.UnitClass;
+    _G.UnitClass = function() return "Warlock", "WARLOCK" end;
+    State.PartyCount = 1;
+    State.Bracket = "2v2";
+    State.Remaining = 45;
+    State.BuffActive = true;
+    State.InCombat = false;
+    installStubs();
+    resetController();
+    ACP.Settings:set("noTradeSameClass", true);
+    DC:setState("ACTIVE");
+    _G.UnitName = function(unit)
+        if (unit == "party1") then return "Alice"; end
+        return "Player";
+    end;
+    ACP.TradeManager.partnerUnit = "Alice";
+    -- Act: Alice shares the player's class (WARLOCK stub) → take-over blocked.
+    local ok = DC:shouldTakeOverInboundTrade();
+    -- Assert
+    lu.assertIsFalse(ok);
+    _G.UnitName = function() return "Player" end;
+    _G.UnitClass = origUnitClass;
 end
 
 function testShouldTakeOverInboundTradeNotActive()

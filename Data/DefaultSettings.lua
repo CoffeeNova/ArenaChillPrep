@@ -9,6 +9,7 @@ ACP.Data = ACP.Data or {};
 ---@class DefaultSettings
 ACP.Data.DefaultSettings = {
     enabled = true, -- Master switch.
+    noTradeSameClass = true, -- Skip auto-trade to teammates of the player's own class.
     tradeDelay = 1.5, -- Seconds between the item appearing and opening the trade.
     gateSafetySeconds = 15, -- Stop all trading N seconds before the gates open.
     brackets = { -- Which arena brackets auto-trade is active in.

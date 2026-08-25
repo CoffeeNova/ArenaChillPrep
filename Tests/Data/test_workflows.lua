@@ -5,6 +5,10 @@
 local ACP = _G.ACP;
 local W = ACP.Data.Workflows;
 
+-- Capture the stub's UnitClass so we can restore it after the class-specific
+-- tests below (they override _G.UnitClass and must not leak into later suites).
+local DefaultUnitClass = _G.UnitClass;
+
 function testIsValidTarget()
     -- Arrange
     -- Act
@@ -240,6 +244,7 @@ end
 
 function testStaticFallbackGatedByClass()
     -- Arrange
+    local origUnitClass = _G.UnitClass;
     local Spellbook = ACP.WorkflowSpellbook;
     Spellbook:_reset();
 
@@ -257,10 +262,12 @@ function testStaticFallbackGatedByClass()
     -- Assert
     lu.assertEquals(mageCount, 0, "mage must not get the warlock catalog");
     lu.assertIsTrue(warlockCount > 0, "warlock must get the warlock catalog");
+    _G.UnitClass = origUnitClass;
 end
 
 function testStaticFallbackIncludesPetsAndStoneRanks()
     -- Arrange
+    local origUnitClass = _G.UnitClass;
     local Spellbook = ACP.WorkflowSpellbook;
     Spellbook:_reset();
 
@@ -277,6 +284,7 @@ function testStaticFallbackIncludesPetsAndStoneRanks()
     lu.assertEquals(Spellbook:getEntry(27269).canTargetParty, true, "Fire Shield is party-castable");
     lu.assertEquals(Spellbook:getEntry(132).canTargetParty, true, "Detect Invisibility is party-castable");
     lu.assertEquals(Spellbook:getEntry(27230).itemID, 22105);
+    _G.UnitClass = origUnitClass;
 end
 
 function testGetEquipItem()
@@ -343,6 +351,7 @@ function testRebuildFillsStaticCatalogForWarlock()
 
     -- Tear down
     clearSpellbookStubs();
+    _G.UnitClass = DefaultUnitClass;
 end
 
 -- ---- SpellbookCatalogBuilder / WarlockCatalogExtender (refactor Phase 7) ----
@@ -384,6 +393,7 @@ end
 
 function testMergeStaticWarlockGatedForOtherClasses()
     -- Both static extensions are no-ops for a non-Warlock.
+    local origUnitClass = _G.UnitClass;
     local spellbook = ACP.WorkflowSpellbook;
     ACP.SpellbookCatalogBuilder:reset(spellbook);
     _G.UnitClass = function() return "Mage", "MAGE" end;
@@ -392,4 +402,8 @@ function testMergeStaticWarlockGatedForOtherClasses()
     lu.assertEquals(ACP.SpellbookCatalogBuilder:countEntries(spellbook), 0);
     _G.UnitClass = function() return "Warlock", "WARLOCK" end;
     ACP.SpellbookCatalogBuilder:reset(spellbook);
+    _G.UnitClass = origUnitClass;
 end
+
+-- Restore the stub's UnitClass for subsequent suites (see DefaultUnitClass).
+_G.UnitClass = DefaultUnitClass;
