@@ -366,7 +366,7 @@ function OptionsUI:buildAutotrade(content, w, h)
     UI.Header(content, L.timingHeader, leftX, leftY);
     leftY = leftY - 28;
 
-    local timingBox = UI.Box(content, leftX, leftY, colW, 128);
+    local timingBox = UI.Box(content, leftX, leftY, colW, 184);
 
     Controls.tradeDelay = UI.Slider(timingBox, "ACPTradeDelaySlider",
         L.tradeDelayLabel, 16, -8, 0, 5, 0.5,
@@ -380,13 +380,19 @@ function OptionsUI:buildAutotrade(content, w, h)
         function(value) setSetting("gateSafetySeconds", value); end,
         L.gateSafetyTooltip);
 
+    Controls.tradeRetries = UI.Slider(timingBox, "ACPTradeRetriesSlider",
+        L.tradeRetriesLabel, 16, -120, 0, 5, 1,
+        function() return ACP.Settings:get("tradeRetries"); end,
+        function(value) setSetting("tradeRetries", value); end,
+        L.tradeRetriesTooltip);
+
     -- "Do not trade to <own class>" — skip auto-trade to teammates of the
     -- player's own class (e.g. other Warlocks). Label is built dynamically so
     -- it names the player's class.
     local playerClassName = select(1, UnitClass("player")) or "???";
     Controls.noTradeSameClass = UI.Checkbox(content, "ACPNoTradeSameClassCheck",
         (L.noTradeSameClassLabel):format(playerClassName),
-        leftX, leftY - 128 - 16,
+        leftX, leftY - 184 - 16,
         function() return ACP.Settings:get("noTradeSameClass"); end,
         function(value) setSetting("noTradeSameClass", value); end,
         L.noTradeSameClassTooltip);
@@ -580,7 +586,7 @@ function OptionsUI:setAutotradeEnabled(flag)
     end
 
     -- Timing sliders (label + slider share the state).
-    for _, key in ipairs({ "tradeDelay", "gateSafety" }) do
+    for _, key in ipairs({ "tradeDelay", "gateSafety", "tradeRetries" }) do
         local slider = Controls[key];
 
         if (slider) then
@@ -643,6 +649,10 @@ function OptionsUI:refresh()
 
     if (Controls.gateSafety) then
         Controls.gateSafety.Refresh();
+    end
+
+    if (Controls.tradeRetries) then
+        Controls.tradeRetries.Refresh();
     end
 
     if (Controls.noTradeSameClass) then

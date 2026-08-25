@@ -472,14 +472,14 @@ function DeliveryController:onTradeFailed(reason)
         return;
     end
 
-    ACP:debugPrint("trade failed: %s (attempt %d/%d)", tostring(reason), self.retryCount + 1, ACP.Data.Constants.MAX_TRADE_RETRIES);
+    ACP:debugPrint("trade failed: %s (attempt %d/%d)", tostring(reason), self.retryCount + 1, ACP.Settings:get("tradeRetries") or 1);
 
     self.currentPartner = nil;
     self:setState(DS.ACTIVE);
 
     self.retryCount = self.retryCount + 1;
 
-    if (self.retryCount > ACP.Data.Constants.MAX_TRADE_RETRIES) then
+    if (self.retryCount > (ACP.Settings:get("tradeRetries") or 1)) then
         self.retryCount = 0;
         return; -- silent give-up until the next event
     end

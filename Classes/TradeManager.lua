@@ -12,8 +12,8 @@
 --   completion       -> UI_INFO_MESSAGE == ERR_TRADE_COMPLETE -> ACP_TRADE_COMPLETED
 --   TRADE_CLOSED     -> ClearCursor(); failure verdict after 0.5 s if no
 --                       completion -> ACP_TRADE_FAILED(reason)
--- Retries with backoff (2/4/8 s, max MAX_TRADE_RETRIES) are driven by the
--- DeliveryController (state machine), not here.
+-- Retries with backoff are driven by the DeliveryController (state machine),
+-- not here; the retry count is the `tradeRetries` setting.
 --
 -- NOTE: there is NO auto-accept. AcceptTrade() is restricted on 2.5.x
 -- (requires a hardware event) — a programmatic call or button:Click() is

@@ -44,9 +44,6 @@ ACP.Data.Constants = {
         ["Бой начался!"] = 0,
     },
 
-    -- Max trade attempts per item batch before giving up silently.
-    MAX_TRADE_RETRIES = 3,
-
     -- Seconds to wait for the trade window to open before calling back as failed.
     TRADE_OPEN_TIMEOUT = 1.0,
 
@@ -54,8 +51,10 @@ ACP.Data.Constants = {
     -- Placing items too fast makes the game silently remove them.
     TRADE_ITEM_TICK = 0.15,
 
-    -- Retry backoff schedule, in seconds (index 1..MAX_TRADE_RETRIES).
-    RETRY_BACKOFF = { 2, 4, 8 },
+    -- Retry backoff schedule, in seconds, indexed by the current retry number
+    -- (1-based). How many retries are allowed is the `tradeRetries` setting
+    -- (default 1); indices beyond this table fall back to 8 s.
+    RETRY_BACKOFF = { 2, 4, 8, 12, 16 },
 
     -- Arena bracket by party size inside the arena (group is locked once inside).
     BRACKET_BY_SIZE = {

@@ -10,6 +10,7 @@ function testDefaultsMasterSwitch()
     -- Assert
     lu.assertIsTrue(D.enabled);
     lu.assertEquals(D.tradeDelay, 1.5);
+    lu.assertEquals(D.tradeRetries, 1);
     lu.assertEquals(D.gateSafetySeconds, 15);
 end
 

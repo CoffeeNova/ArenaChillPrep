@@ -26,10 +26,9 @@ function testConstantsTrade()
     -- Arrange
     -- Act
     -- Assert
-    lu.assertEquals(C.MAX_TRADE_RETRIES, 3);
     lu.assertEquals(C.TRADE_OPEN_TIMEOUT, 1.0);
     lu.assertEquals(C.TRADE_ITEM_TICK, 0.15);
-    lu.assertEquals(C.RETRY_BACKOFF, { 2, 4, 8 });
+    lu.assertEquals(C.RETRY_BACKOFF, { 2, 4, 8, 12, 16 });
 end
 
 function testConstantsBrackets()

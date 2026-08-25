@@ -44,6 +44,9 @@ local strings = {
         tradeDelayTooltip = "Seconds between the item appearing in your bags and the trade window opening",
         gateSafetyLabel = "Stop trading N seconds before the gates open:",
         gateSafetyTooltip = "Stop initiating trades N seconds before the gates open",
+        tradeRetriesLabel = "Trade retries:",
+        tradeRetriesTooltip = "How many times to silently re-offer a trade after it fails (e.g. Cancel was pressed). 0 = offer once",
+
         resetButton = "Reset to defaults",
         resetTooltip = "Restore all settings to their default values",
         ranks = {"Minor", "Lesser", "Healthstone", "Greater", "Major", "Master"},
@@ -212,6 +215,9 @@ local strings = {
         tradeDelayTooltip = "Секунды между появлением предмета в сумках и открытием окна обмена",
         gateSafetyLabel = "Прекратить обмен за N секунд до открытия ворот:",
         gateSafetyTooltip = "Прекратить инициировать обмен за N секунд до открытия ворот",
+        tradeRetriesLabel = "Повторов обмена:",
+        tradeRetriesTooltip = "Сколько раз повторно предлагать обмен после неудачи (например, нажат Cancel). 0 = предложить один раз",
+
         resetButton = "Сбросить настройки",
         resetTooltip = "Вернуть все настройки к значениям по умолчанию",
         ranks = {"Малый", "Меньший", "Обычный", "Большой", "Крупный", "Мастер"},
