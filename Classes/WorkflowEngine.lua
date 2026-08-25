@@ -1,21 +1,8 @@
 -- ArenaChillPrep — Classes/WorkflowEngine
--- Core state machine + step orchestration. Runs a user-defined sequence of
--- warlock prep actions: cast buffs, summon a pet, create items (healthstones).
--- State machine IDLE→RUNNING→PAUSED→DONE, resets to IDLE on ACP_BUFF_LOST.
--- Pure logic (no UI); ALL steps cast through a hidden secure button bound to
--- ONE hotkey — 20506 blocks insecure casting (CastSpellByID/CastSpellByName)
--- for cast-time AND instant spells outside safe zones, so only a real
--- hardware key press can cast (verified 2026-08-19).
---
--- REFACTOR (Phase 5, 2026-08-24): the step EXECUTORS were extracted into
---   WorkflowCastController  — player-cast steps + UNIT_SPELLCAST_* events
---   PetAbilityCaster        — pet steps + the PostClick press handling
---   WorkflowItemSteps       — createItem/equipItem + item waits
---   WorkflowBindings        — secure buttons + key binding management
--- The engine keeps the state, the gates, the catalog/aura helpers, the
--- lifecycle (start/pause/reset/advance) and a per-step-type dispatch table
--- (W9). The extracted modules operate ON the engine (first argument); the
--- delegating methods below keep the engine's public surface stable.
+-- Workflow state machine (IDLE→RUNNING→PAUSED→DONE) + step orchestration.
+-- Step executors live in WorkflowCastController / PetAbilityCaster /
+-- WorkflowItemSteps; secure buttons + bindings in WorkflowBindings. All
+-- casting goes through a hidden secure button — 20506 blocks insecure casts.
 
 ---@type ACP
 local _, ACP = ...;
@@ -46,134 +33,75 @@ local WorkflowEngine = {
     ---@type number
     stepIndex = 1,
 
-    --- True while waiting for a cast-time spell to finish (guards the
-    --- UNIT_SPELLCAST_* handlers so instant steps and other addons' casts
-    --- never advance the engine).
     ---@type boolean
     waitingForCast = false,
 
-    --- Whether the client ACCEPTED the current cast (UNIT_SPELLCAST_SENT).
-    --- False + no cast in progress at the timeout => the cast call was
-    --- dropped by the client (typically a protected action in a restricted
-    --- state), reported as "castBlocked" instead of a bare "castTimeout".
     ---@type boolean
     castAccepted = false,
 
-    --- CAST-TIME steps: waiting for the USER to press the workflow hotkey —
-    --- the hardware event the 20506 client requires (insecure casting of
-    --- cast-time spells is blocked even out of combat). True until
-    --- UNIT_SPELLCAST_SENT/START transitions to waitingForCast.
     ---@type boolean
     waitingForKey = false,
 
-    --- Set when a createItem step is waiting for its item to appear.
     ---@type number|nil
     expectedItemID = nil,
 
-    --- Item IDs a createItem step accepts as "created". On TBC 2.5.5 the stone
-    --- ranks COEXIST (the client does NOT auto-upgrade a rank-5 cast to the max
-    --- rank), so when the stored rank is castable the expected set is exactly
-    --- { that rank's stone }. The family-widened set (every same-family stone of
-    --- rank >= the step's rank) is used ONLY for the unlearned-rank fallback,
-    --- where the cast is upgraded to the player's known rank (e.g. a stored
-    --- unlearned rank-5 11730 casts rank 6 and yields Master 22105, not 19012).
-    --- Nil for non-stone steps — then only `expectedItemID` is accepted.
     ---@type table|nil
     expectedItemIDs = nil,
 
-    --- Bag count of `expectedItemIDs` captured just BEFORE the createItem cast,
-    --- so completion is a delta (a NEW stone appeared), not mere presence — a
-    --- leftover higher-rank stone must not satisfy a lower-rank step.
     ---@type number|nil
     expectedBaseline = nil,
 
-    --- The spellID actually cast for the current step after rank resolution
-    --- (an unlearned lower rank is upgraded to the player's known rank). Set by
-    --- castSpell/createItem just before requestKeyCast; read by requestKeyCast.
     ---@type number|nil
     pendingCastSpellID = nil,
 
-    --- True while an equipItem step waits for the user to press the hotkey
-    --- (the secure button is re-pointed at the item; no spell events fire for
-    --- item use, so completion is poll-driven: the item leaving the bags).
     ---@type boolean
     waitingForEquip = false,
 
-    --- The itemID an equipItem step is trying to equip (poll guard).
     ---@type number|nil
     equipItemID = nil,
 
-    --- Index of a pet step armed during the current player cast so its key can
-    --- be pressed BEFORE the cast finishes (the pet casts independently). Nil
-    --- when no pet step is armed.
     ---@type number|nil
     pendingPetStep = nil,
 
-    --- Whether the armed pet step's key was pressed (the pet cast the ability).
     ---@type boolean
     petStepDone = false,
 
-    --- True while a standalone pet step waits for its key press (no player cast
-    --- in progress; the pet casts the ability on its own).
     ---@type boolean
     waitingForPet = false,
 
-    --- Per-slot secure cast buttons (slot → frame). Each is permanently
-    --- click-bound (session-transient SetBindingClick) to that slot's Key
-    --- Bindings UI key: PreClick starts/resumes the slot and the SAME press's
-    --- click casts the freshly armed step (one press = start + cast,
-    --- 2026-08-22 redesign — the old takeover/release dance is gone).
-    --- Managed by WorkflowBindings.
     ---@type table<number, frame>
     castButtons = {},
 
-    --- The Key Bindings UI key each slot's button is click-bound to
-    --- (slot → key string). Filled by applySlotBindings; nil when the slot has
-    --- no bound key. The session-transient click takeover NEVER touches the
-    --- bindings-cache (no SaveBindings) and is reverted on PLAYER_LOGOUT.
     ---@type table<number, string>
     slotKeys = {},
 
-    --- DEBUG: bypass the arena-prep requirement (start() and the notArena
-    --- gate). Set via /acp workflowtest to test casts outside an arena.
     ---@type boolean
     debugBypass = false,
 
-    --- True while a /acp workflowtest (or the Workflows-tab Test button) run is
-    --- active — drives the "Stop testing" toggle on the Test button.
     ---@type boolean
     isTesting = false,
 
-    --- The slot currently being test-run (set by startTest). Lets the Test
-    --- button distinguish "stop the running test" from "switch the test to a
-    --- different slot".
     ---@type number|nil
     testSlot = nil,
+
+    instantPressDetected = false,
 };
 
 ---@type WorkflowEngine
 ACP.WorkflowEngine = WorkflowEngine;
 
---- Max aura index scanned by the skip-if-buffed check.
 local MAX_AURA_INDEX = 40;
 
---- State machine values (Data/Constants.WORKFLOW_STATE).
 local WS = ACP.Data.Constants.WORKFLOW_STATE;
 
---- Pause reason keys (Data/Constants.WORKFLOW_REASON).
 local Reason = ACP.Data.Constants.WORKFLOW_REASON;
 
 local C = ACP.Data.Constants;
 
---- Per-step-type dispatch (W9): one lookup replaces the old multi-site
---- if/elseif chains (executeCurrentStep / isStepGoalMet / effectiveSkip /
---- checkGates). `run` executes the step; `goalMet` reports whether its goal
---- is already met (skip-completed); `skippable` opts into the global
---- "skip completed steps" setting; `needsKnownSpell` gates the player-spell check; `petDoneAware`
---- consumes the petStepDone flag; `petExempt` exempts the step from the
---- player-casting/movement gates. Handlers live in the extracted step
---- modules — the old if/elseif chain is preserved in git history
---- (HEAD 9f0cb9e).
+--- Per-step-type dispatch: `run` executes, `goalMet` reports an already-met
+--- goal (skip-completed), `skippable` opts into the global setting,
+--- `needsKnownSpell` gates the player-spell check, `petDoneAware` consumes
+--- petStepDone, `petExempt` exempts pet steps from player-casting gates.
 local STEP_DISPATCH = {
     [C.WORKFLOW_STEP_EQUIP_ITEM] = {
         run = function(engine, step)
@@ -221,7 +149,6 @@ local STEP_DISPATCH = {
     },
 };
 
---- Cancel every engine timer by name (named timers — see Utils/Timers).
 function WorkflowEngine:cancelTimers()
     ACP.Utils.Timers:cancel("WorkflowCastTimeout");
     ACP.Utils.Timers:cancel("WorkflowGCD");
@@ -229,15 +156,11 @@ function WorkflowEngine:cancelTimers()
     ACP.Utils.Timers:cancel("WorkflowPetVerify");
 end
 
---- State write with change-suppression log + enum validation (StateMachine
---- mixin — the WS table is the WORKFLOW_STATE enum).
 ---@param newState string
 function WorkflowEngine:setState(newState)
     ACP.StateMachine:setState(self, newState, WS);
 end
 
---- Localized name of a spell, falling back to the catalog's English label
---- (and finally "#<id>") when GetSpellInfo cannot resolve it.
 ---@param spellID number
 ---@return string
 function WorkflowEngine:spellName(spellID)
@@ -254,9 +177,6 @@ function WorkflowEngine:spellName(spellID)
     return (entry and entry.name) or ("#" .. tostring(spellID));
 end
 
---- Localized name of an item for an equipItem step: GetItemInfo first
---- (the created stone is in bags by then, so the info is cached), then the
---- step's stored itemName (catalog/English fallback), then "item:<id>".
 ---@param step table
 ---@return string
 function WorkflowEngine:itemName(step)
@@ -277,9 +197,6 @@ function WorkflowEngine:itemName(step)
     return "item:" .. tostring(itemID);
 end
 
---- Catalog entry for a spell, or nil. The catalog lives in
---- ACP.Data.Workflows.spells (grouped by category — buffs/summons/createItem/
---- utility).
 ---@param spellID number
 ---@return table|nil
 function WorkflowEngine:getCatalogEntry(spellID)
@@ -308,17 +225,9 @@ function WorkflowEngine:getCatalogEntry(spellID)
     return nil;
 end
 
---- Resolve the spell a step should ACTUALLY cast and the item it will create.
---- If the stored rank is castable (IsPlayerSpell), it is used verbatim — the
---- player explicitly chose that rank and it is the spell they can cast (e.g.
---- rank 5 "Create Healthstone (rank 5)" / 11730, which is learned and castable).
---- Only when the stored rank is UNLEARNED (the client replaced it with a higher
---- rank at level-up) do we fall back to the highest KNOWN rank of the same
---- family. The family lookup uses the family name (e.g. "Create Healthstone"),
---- not the rank-suffixed localized spell name, so the spellbook group matches.
---- Both the cast and the completion check use this resolved rank so an unlearned
---- lower rank no longer silently stalls, while a deliberately-stored castable
---- rank is never overridden.
+--- Spell a step actually casts (and the item it will create): the stored rank
+--- verbatim when castable, else the highest KNOWN rank of its family. On
+--- 20506 a trained higher rank replaces the lower one in the spellbook.
 ---@param step table
 ---@return number castSpellID
 ---@return number castItemID
@@ -344,9 +253,6 @@ function WorkflowEngine:resolveCastInfo(step)
     return spellID, step.itemID;
 end
 
---- Settings definition of a workflow slot, or nil when it is missing or
---- disabled. When the debug bypass is active (workflowtest), the per-slot
---- enabled flag is ignored so ANY slot can be tested regardless of state.
 ---@param slot number
 ---@return table|nil
 function WorkflowEngine:getDefinition(slot)
@@ -359,7 +265,6 @@ function WorkflowEngine:getDefinition(slot)
     return nil;
 end
 
---- Name of the running/paused workflow (for log messages).
 ---@return string
 function WorkflowEngine:definitionName()
     local definition = self.currentSlot and self:getDefinition(self.currentSlot);
@@ -367,14 +272,13 @@ function WorkflowEngine:definitionName()
     return definition and definition.name or "";
 end
 
---- Whether the player knows the spell. IsPlayerSpell accepts a spell NAME
---- (matches any known rank — a trained rank replaces the base ID in the
---- spellbook, so the rank-1 catalog ID alone would be false at max level) or
---- an ID (the TrackingEye-proven form). Both checks are pcall-guarded.
+--- Checks the RESOLVED cast spell (resolveCastInfo), not the stored ID — a
+--- stored lower rank is not in the spellbook once a higher one is trained.
 ---@param step table
 ---@return boolean
 function WorkflowEngine:knowsSpell(step)
-    local name = self:spellName(step.spellID);
+    local resolvedID = self:resolveCastInfo(step);
+    local name = self:spellName(resolvedID);
 
     if (IsPlayerSpell and name and name:sub(1, 1) ~= "#") then
         local ok, known = pcall(IsPlayerSpell, name);
@@ -384,7 +288,7 @@ function WorkflowEngine:knowsSpell(step)
     end
 
     if (IsPlayerSpell) then
-        local ok, known = pcall(IsPlayerSpell, step.spellID);
+        local ok, known = pcall(IsPlayerSpell, resolvedID);
         if (ok and known) then
             return true;
         end
@@ -393,10 +297,8 @@ function WorkflowEngine:knowsSpell(step)
     return false;
 end
 
---- Per-step gates (§3.7). Returns nil when every gate passes, or the reason
---- key of the failing gate (localized via L.workflow.reason*).
 ---@param step table
----@return string|nil
+---@return string|nil reason
 function WorkflowEngine:checkGates(step)
     if (not ACP.Preconditions:enabled() or not ACP.Settings:get("workflows.enabled")) then
         return Reason.EngineDisabled;
@@ -414,47 +316,32 @@ function WorkflowEngine:checkGates(step)
         return Reason.Dead;
     end
 
-    -- Target-availability gate: a step configured for a party member must not
-    -- silently cast on the wrong unit (live 2026-08-22: party-targeted Fire
-    -- Shield and Unending Breath landed on the PLAYER — the unit token never
-    -- resolved on the cast side). When the party slot is missing (solo test,
-    -- raid group, member left), pause with a clear reason instead of
-    -- mis-buffing. Checked BEFORE the pet exemption so pet steps get it too.
+    -- Pause instead of mis-buffing when a party target does not exist.
     if (step.target and step.target ~= "player" and _G.UnitExists and not _G.UnitExists(step.target)) then
         return Reason.NoTarget;
     end
 
     local handler = STEP_DISPATCH[step.type];
 
-    -- Pet-ability steps are cast by the pet, not the player — they are exempt
-    -- from the player-casting and movement gates so they can be applied DURING
-    -- the previous step's cast.
+    -- Pet steps are cast by the pet: exempt from player-casting/movement gates.
     if (not (handler and handler.petExempt)) then
         if (UnitCastingInfo and UnitCastingInfo("player")) then
             return Reason.Casting;
         end
 
-        -- Pause-on-move is an unconditional safety rule. Instant self-buffs can be
-        -- cast while moving on some clients, so workflows always wait for the
-        -- player to stop; there is no user setting for this behavior.
         if (IsPlayerMoving and IsPlayerMoving()) then
             return Reason.Moving;
         end
     end
 
-    -- Reagent gate: summon/createItem steps consume a Soul Shard (6265).
-    -- A live scan (countItem) — the Inventory cache only tracks healthstones.
     local entry = self:getCatalogEntry(step.spellID);
 
     if (entry and entry.needsShard and ACP.Inventory:countItem(ACP.Data.Constants.SOUL_SHARD_ITEM_ID) < 1) then
         return Reason.NoShard;
     end
 
-    -- Gate safety: stop CAST-TIME steps close to the gates opening. Instant
-    -- spells and steps without a cast time (equipItem, unknown spells, pet
-    -- abilities) complete in <1 GCD and cannot be caught mid-cast — a
-    -- gateSafety pause on an instant step created a resume→pause infinite
-    -- loop (live 2026-08-22). Instant steps just proceed.
+    -- Gate safety applies to cast-time steps only (instant steps cannot be
+    -- caught mid-cast).
     if (not entry or not entry.isCastTime) then
         return nil;
     end
@@ -466,9 +353,6 @@ function WorkflowEngine:checkGates(step)
     return nil;
 end
 
---- The creature entry ID a summon spell produces, resolved from the static
---- `Data.Workflows.spells` catalog (the runtime spellbook scan does not carry
---- `petEntry`). Locale-independent — used to match the active pet's GUID.
 ---@param spellID number
 ---@return number|nil
 function WorkflowEngine:getPetEntry(spellID)
@@ -489,10 +373,6 @@ function WorkflowEngine:getPetEntry(spellID)
     return nil;
 end
 
---- Whether the summoned pet for this step is ALREADY the active pet. Matches
---- the creature entry ID from the pet's GUID (locale-independent) against the
---- summon catalog entry's `petEntry`, so a summon step is skipped when the same
---- pet is already out (e.g. arena reload mid-prep, or a duplicate step).
 ---@param step table
 ---@return boolean
 function WorkflowEngine:isAlreadySummoned(step)
@@ -512,11 +392,8 @@ function WorkflowEngine:isAlreadySummoned(step)
         return false;
     end
 
-    -- TBC Classic 2.5.x GUID format for a creature/pet:
-    --   <type>-<server>-<instance>-<zone>-<entry>-<spawnHex>
-    -- where <type> is the unit-type word ("Pet"/"Creature"/"Vehicle", verified
-    -- live as "Pet-0-6423-1-18-416-1100B8E8E4") — %w+ covers both the word and
-    -- any numeric-type builds. The creature entry ID is the 5th segment.
+    -- TBC pet GUID: <type>-<server>-<instance>-<zone>-<entry>-<spawnHex>;
+    -- the creature entry ID is the 5th segment.
     local id = guid:match("^%w+%-%d+%-%d+%-%d+%-%d+%-(%d+)%-%x+$");
 
     ACP:debugPrint("workflow pet GUID %s -> entry %s (want %s)", tostring(guid), tostring(id), tostring(petEntry));
@@ -524,10 +401,6 @@ function WorkflowEngine:isAlreadySummoned(step)
     return id ~= nil and tonumber(id) == petEntry;
 end
 
---- Whether a step's goal is already met (so a skip-completed step can be
---- skipped without casting). Buff steps → aura present; summon → pet already
---- out; createItem → product already in bags. Per-type via the dispatch table
---- (W9).
 ---@param step table
 ---@return boolean
 function WorkflowEngine:isStepGoalMet(step)
@@ -540,12 +413,8 @@ function WorkflowEngine:isStepGoalMet(step)
     return false;
 end
 
---- Whether a step should skip when its goal is already met. The GLOBAL
---- "skip completed steps" setting (`workflows.skipIfBuffedDefault`) is the
---- master switch for `cast` (buff) / `summon` / `createItem` steps. The
---- per-step `skipIfBuffed` override was REMOVED (2026-08-25) — the setting
---- alone governs skipping; stale `skipIfBuffed` fields in saved data are
---- ignored.
+--- The global "skip completed steps" setting governs cast/summon/createItem
+--- steps; there is no per-step flag.
 ---@param step table
 ---@return boolean
 function WorkflowEngine:effectiveSkip(step)
@@ -558,10 +427,6 @@ function WorkflowEngine:effectiveSkip(step)
     return false;
 end
 
---- Whether `name` is among the HELPFUL auras on `unit`, matched by NAME
---- (rank-agnostic — a higher-rank cast has a different spellID than the
---- catalog entry). Uses C_UnitAuras.GetAuraDataByIndex (the verified 20506
---- aura API).
 ---@param unit string
 ---@param name string
 ---@return boolean
@@ -591,12 +456,32 @@ function WorkflowEngine:isAlreadyBuffed(step)
     return self:hasBuff(step.target or "player", self:spellName(step.spellID));
 end
 
---- Clear the transient per-step wait state (the RUNNING sub-state flags).
---- `includePetDone` also clears petStepDone — a pet ability pressed DURING the
---- just-finished player cast must survive advance() (so executeCurrentStep
---- skips that pet step instead of re-arming it), but pause/reset start fresh.
---- castAccepted is always cleared: it is only read by onCastTimeout, which is
---- only armed after a fresh SENT/START (W11 — no stale flag across states).
+--- ExpirationTime of the named helpful aura, or nil when absent. Lets
+--- waitForInstantEffect distinguish "the buff landed" from "already there"
+--- when the target is buffed at step start (skip-completed OFF → re-cast).
+---@param unit string
+---@param name string
+---@return number|nil
+function WorkflowEngine:getBuffExpiration(unit, name)
+    if (not GetAuraDataByIndex or name:sub(1, 1) == "#") then
+        return nil;
+    end
+
+    for i = 1, MAX_AURA_INDEX do
+        local aura = GetAuraDataByIndex(unit, i, "HELPFUL");
+
+        if (not aura) then
+            break;
+        end
+
+        if (aura.name == name) then
+            return aura.expirationTime;
+        end
+    end
+
+    return nil;
+end
+
 ---@param includePetDone boolean
 function WorkflowEngine:clearTransientState(includePetDone)
     self.waitingForCast = false;
@@ -617,13 +502,6 @@ function WorkflowEngine:clearTransientState(includePetDone)
     end
 end
 
---- Advance to the next step after cleaning up the current wait. Recurses
---- through skip paths; the natural GCD/event waits yield between cast steps.
---- NOTE: `pendingPetStep` is cleared (the arming is per-cast), but
---- `petStepDone` is deliberately NOT — a pet ability pressed DURING the
---- just-completed cast must survive this transition so executeCurrentStep
---- skips that pet step instead of re-arming it (pause/reset/interrupt clear
---- it; the pet-step branch consumes it).
 function WorkflowEngine:advance()
     self:cancelTimers();
     self:clearTransientState(false);
@@ -631,9 +509,6 @@ function WorkflowEngine:advance()
     self:executeCurrentStep();
 end
 
---- Run the current step: gates, unknown-spell/buff skips, dispatch by type
---- (W9 handler table). Also the DONE transition (stepIndex past the last
---- step, incl. empty workflows).
 function WorkflowEngine:executeCurrentStep()
     if (self.state ~= WS.RUNNING) then
         return;
@@ -643,7 +518,6 @@ function WorkflowEngine:executeCurrentStep()
     local steps = (definition and type(definition.steps) == "table") and definition.steps or {};
     local step = steps[self.stepIndex];
 
-    -- Out of steps → DONE.
     if (not step) then
         local wasTesting = self.isTesting;
 
@@ -651,9 +525,6 @@ function WorkflowEngine:executeCurrentStep()
         self:clearKeyCast();
         self:setState(WS.DONE);
 
-        -- A test run that finished naturally ends the test mode: clear the
-        -- flags so the Test button reverts to "Test" (via ACP_WORKFLOW_DONE)
-        -- and normal key presses require arena prep again (no leaked bypass).
         if (wasTesting) then
             self.isTesting = false;
             self.testSlot = nil;
@@ -670,7 +541,6 @@ function WorkflowEngine:executeCurrentStep()
         return;
     end
 
-    -- Validate the step schema (§3.5) — an invalid step is skipped, not fatal.
     local ok, err = ACP.Data.Workflows:validateStep(step);
 
     if (not ok) then
@@ -681,19 +551,14 @@ function WorkflowEngine:executeCurrentStep()
 
     ACP.Events:fire("ACP_WORKFLOW_STEP", self.currentSlot, self.stepIndex, step);
 
-    -- Skip-completed (global setting) → skip WITHOUT casting when the step's
-    -- goal is already met (buff present, pet already summoned, or item already
-    -- in bags). Checked before the gates so a met goal is honored even when a
-    -- reagent/combat gate would otherwise pause the step (no point conjuring a
-    -- stone you already have, or summoning a pet that is already out).
+    -- Skip-completed: checked before the gates so a met goal is honored even
+    -- without reagents.
     if (self:effectiveSkip(step) and self:isStepGoalMet(step)) then
         ACP:debugPrint(ACP.L.workflow.stepSkippedDone, self.stepIndex);
         self:advance();
         return;
     end
 
-    -- Gates (§3.7): a failing gate pauses — the user fixes the condition and
-    -- presses the key to resume from the same step.
     local reason = self:checkGates(step);
 
     if (reason) then
@@ -701,20 +566,14 @@ function WorkflowEngine:executeCurrentStep()
         return;
     end
 
-    -- Dispatch by type (W9 handler table — the old if/elseif chain is in git
-    -- history, HEAD 9f0cb9e).
     local handler = STEP_DISPATCH[step.type];
 
-    -- Pet abilities are cast by the pet, not the player — a pet step already
-    -- pressed during the previous player cast is skipped here.
     if (handler and handler.petDoneAware and self.petStepDone) then
         self.petStepDone = false;
         self:advance();
         return;
     end
 
-    -- Unknown spell → skip the step, continue with the next. Spell steps only:
-    -- equipItem has no spellID and pet abilities are never player spells.
     if (handler and handler.needsKnownSpell and not self:knowsSpell(step)) then
         ACP:debugPrint(ACP.L.workflow.stepSkippedUnknown, self.stepIndex);
         self:advance();
@@ -726,9 +585,7 @@ function WorkflowEngine:executeCurrentStep()
     end
 end
 
---- Pause the running workflow (state → PAUSED), keeping the current step so
---- the next key press resumes from it. Idempotent.
----@param reason string  reason key (L.workflow.reason*)
+---@param reason string
 function WorkflowEngine:pause(reason)
     if (self.state ~= WS.RUNNING) then
         return;
@@ -744,9 +601,6 @@ function WorkflowEngine:pause(reason)
     ACP.Events:fire("ACP_WORKFLOW_PAUSED", reason);
 end
 
---- Reset the engine to IDLE (§3.11). Called on ACP_BUFF_LOST and when a
---- different workflow slot is started mid-run. stepIndex is in-memory only —
---- each new arena starts from step 1.
 function WorkflowEngine:reset()
     self:cancelTimers();
     self:setState(WS.IDLE);
@@ -759,9 +613,6 @@ function WorkflowEngine:reset()
     ACP.Events:fire("ACP_WORKFLOW_RESET");
 end
 
---- Start a workflow slot, or resume a paused one (§3.4). No-op outside arena
---- prep, in combat, while a workflow is already running, or once DONE (a new
---- arena resets the engine via ACP_BUFF_LOST).
 ---@param slot number
 function WorkflowEngine:start(slot)
     slot = slot or 1;
@@ -772,24 +623,16 @@ function WorkflowEngine:start(slot)
     end
 
     if (self.state == WS.RUNNING and self.currentSlot == slot) then
-        return; -- already running
+        return;
     end
 
-    -- TEST-MODE SLOT LOCK (2026-08-24): while a /acp workflowtest run is active
-    -- ONLY the tested slot's key may start/resume the engine. Without this, a
-    -- key press of a DIFFERENT workflow's slot calls start() for that slot,
-    -- which (debugBypass true) passes the arena gate, resets the running test
-    -- and hijacks it — pressing ";" (slot 1) while testing slot 2 with F5
-    -- silently switched the run to slot 1. Any other slot's key is a no-op.
+    -- While a test run is active, only the tested slot's key may start/resume.
     if (self.debugBypass and self.testSlot and slot ~= self.testSlot) then
         ACP:debugPrint("workflow test: ignoring start for slot %d (testing slot %d)", slot, self.testSlot);
         return;
     end
 
-    -- One run per prep/test command (2026-08-22): after DONE the key press is
-    -- a no-op in BOTH modes — the user complained the workflow "went a second
-    -- round". A fresh run starts on ACP_BUFF_LOST (new arena) or by re-issuing
-    -- /acp workflowtest N, which resets the engine before start().
+    -- One run per prep/test: after DONE the key is a no-op.
     if (self.state == WS.DONE) then
         return;
     end
@@ -816,20 +659,16 @@ function WorkflowEngine:start(slot)
         return;
     end
 
-    -- An empty workflow has nothing to do — say so instead of flashing
-    -- "started … complete".
     if (type(definition.steps) ~= "table" or #definition.steps == 0) then
         ACP:debugPrint(ACP.L.workflow.emptyWorkflow, slot, definition.name or "");
         return;
     end
 
-    -- A different slot is running/paused → reset first, then start fresh.
     if (self.currentSlot and self.currentSlot ~= slot
         and (self.state == WS.RUNNING or self.state == WS.PAUSED)) then
         self:reset();
     end
 
-    -- Resume the same paused slot.
     if (self.state == WS.PAUSED and self.currentSlot == slot) then
         self:setState(WS.RUNNING);
         ACP:debugPrint(ACP.L.workflow.resumed, slot, definition.name or "", self.stepIndex);
@@ -838,7 +677,6 @@ function WorkflowEngine:start(slot)
         return;
     end
 
-    -- Fresh start.
     self.currentSlot = slot;
     self.stepIndex = 1;
     self:clearTransientState(true);
@@ -848,10 +686,7 @@ function WorkflowEngine:start(slot)
     self:executeCurrentStep();
 end
 
---- Start a workflow slot OUTSIDE an arena (mirrors the `/acp workflowtest`
---- slash command): bypasses the prep requirement, resets the engine first so
---- each call starts a fresh run, and prints a visible chat message. The actual
---- casts still need a hardware event (the bound key) — this only fires the run.
+--- Test run outside an arena: bypasses the prep requirement and resets first.
 ---@param slot number
 function WorkflowEngine:startTest(slot)
     slot = slot or 1;
@@ -867,16 +702,11 @@ function WorkflowEngine:startTest(slot)
         local name = type(definition) == "table" and definition.name or "";
         ACP:print(ACP.L.workflow.started, slot, name);
     else
-        -- The test did not start (engine disabled, empty workflow, ...) — do
-        -- not leave the bypass behind: a leaked debugBypass would let normal
-        -- workflow key presses start runs outside an arena.
+        -- Do not leak the bypass when the test did not start.
         self.debugBypass = false;
     end
 end
 
---- Stop a running /acp workflowtest run (the Test button "Stop testing"
---- state): clear the bypass + test flag and reset the engine to IDLE. A fresh
---- test starts cleanly on the next press.
 function WorkflowEngine:stopTest()
     local slot = self.testSlot or self.currentSlot;
     self.isTesting = false;
@@ -886,7 +716,6 @@ function WorkflowEngine:stopTest()
     ACP:print(ACP.L.workflow.testStopped, slot or 0);
 end
 
---- Status summary for /acp status.
 ---@return string
 function WorkflowEngine:getStatus()
     local definition = self.currentSlot and self:getDefinition(self.currentSlot);
@@ -896,9 +725,6 @@ function WorkflowEngine:getStatus()
         self.state, tostring(self.currentSlot), self.stepIndex, steps, tostring(self:resolveCastKey(self.currentSlot)));
 end
 
---- Initialize the engine: lifecycle events + the extracted subsystems (the
---- secure buttons and binding events live in WorkflowBindings; the cast and
---- item event handlers in their step modules).
 function WorkflowEngine:_init()
     if (not ACP.StateMachine:initOnce(self)) then
         return;
@@ -909,30 +735,19 @@ function WorkflowEngine:_init()
     ACP.WorkflowItemSteps:_init(self);
 
     ACP.Events:register("WE.BUFF_LOST", "ACP_BUFF_LOST", function()
-        -- A /acp workflowtest run ignores the arena buff entirely (debugBypass),
-        -- so don't tear it down when the prep buff is lost — only reset for real
-        -- arena sessions. Without this guard the reset clears `isTesting` and the
-        -- Test button's "Stop testing" toggle breaks (it restarts instead).
+        -- A test run ignores the arena buff — do not tear it down.
         if (not self.isTesting) then
             self:reset();
         end
     end);
 
-    -- Combat makes casting impossible (protected API) → pause; the user
-    -- resumes with the key after combat ends.
     ACP.Events:register("WE.COMBAT_START", "PLAYER_REGEN_DISABLED", function()
         self:pause(Reason.InCombat);
     end);
 end
 
--- ---------------------------------------------------------------------------
--- Delegates to the extracted step/binding modules. These keep the engine's
--- public surface stable (WorkflowUI, OptionsUI, WorkflowBindings globals and
--- the test suite call through the engine), while the implementations live in
--- their own modules operating on `self` (the engine).
--- ---------------------------------------------------------------------------
+-- Delegates to the extracted step/binding modules (they operate on `self`).
 
--- Cast subsystem (Classes/WorkflowCastController.lua)
 function WorkflowEngine:castSpell(step)
     return ACP.WorkflowCastController:castSpell(self, step);
 end
@@ -973,7 +788,6 @@ function WorkflowEngine:clearKeyCast()
     return ACP.WorkflowCastController:clearKeyCast(self);
 end
 
--- Pet subsystem (Classes/PetAbilityCaster.lua)
 function WorkflowEngine:petMacroText(step)
     return ACP.PetAbilityCaster:petMacroText(self, step);
 end
@@ -994,7 +808,6 @@ function WorkflowEngine:onSecurePress(slot)
     return ACP.PetAbilityCaster:onSecurePress(self, slot);
 end
 
--- Item subsystem (Classes/WorkflowItemSteps.lua)
 function WorkflowEngine:createItem(step)
     return ACP.WorkflowItemSteps:createItem(self, step);
 end
@@ -1027,7 +840,6 @@ function WorkflowEngine:waitForItem(itemID)
     return ACP.WorkflowItemSteps:waitForItem(self, itemID);
 end
 
--- Binding subsystem (Classes/WorkflowBindings.lua)
 function WorkflowEngine:boundKey()
     return ACP.WorkflowBindings:boundKey(self);
 end

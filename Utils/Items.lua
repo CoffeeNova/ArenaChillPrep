@@ -1,19 +1,17 @@
 -- ArenaChillPrep — Utils/Items
--- Item helpers: container info shim + stack-aware counting and
--- findItemInBags(itemID, skipSoulbound).
----@class ACP
+-- Item helpers: container shims (C_Container vs legacy globals) +
+-- stack-aware counting and findItemInBags.
+
 ---@type ACP
 local _, ACP = ...;
 
 ---@class Items
 local Items = {};
 
---- Read the number of slots in a bag with the TBC signature in mind.
---- Shim for both C_Container.GetContainerNumSlots and the legacy global.
---- Resolved at call time so sandbox tests can stub the global.
 ---@param bag number
 ---@return number
 function Items:getContainerNumSlots(bag)
+    -- Resolved at call time so sandbox tests can stub the global.
     local getNumSlots = _G.GetContainerNumSlots or (C_Container and C_Container.GetContainerNumSlots);
 
     if (getNumSlots) then
@@ -23,13 +21,8 @@ function Items:getContainerNumSlots(bag)
     return 0;
 end
 
---- Read container item info with the TBC signature in mind.
---- Shim for both the modern C_Container API and the legacy
---- GetContainerItemInfo.
----
---- Returns the legacy-style tuple:
----   icon, stackCount, locked, quality, readable, hasLoot, link,
----   filtered, noValue, itemID, bound
+--- Legacy-style tuple: icon, stackCount, locked, quality, readable, hasLoot,
+--- link, filtered, noValue, itemID, bound.
 ---@param bag number
 ---@param slot number
 ---@return any
@@ -52,9 +45,6 @@ function Items:getContainerItemInfo(bag, slot)
     return nil;
 end
 
---- Read the container fields callers actually use from one slot.
---- Centralizes the legacy-tuple positions (see getContainerItemInfo) so call
---- sites never read ten positional underscores; returns semantic values.
 ---@param bag number
 ---@param slot number
 ---@return number|nil itemID
@@ -67,9 +57,8 @@ function Items:getItemData(bag, slot)
     return itemID, stackCount, bound, link;
 end
 
---- Find the first bag slot holding `itemID`, optionally skipping soulbound
---- items (bound = 11th container value, reliable on TBC). Bags 0..4 only, no
---- bank.
+--- First bag slot holding `itemID`; with skipSoulbound, bound items are
+--- skipped (bound = 11th container value). Bags 0..4 only.
 ---@param itemID number
 ---@param skipSoulbound boolean|nil
 ---@return number|nil bag, number|nil slot

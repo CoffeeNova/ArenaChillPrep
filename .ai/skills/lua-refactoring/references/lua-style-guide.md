@@ -92,18 +92,10 @@ if first and last then name = first .. " " .. last else name = "John Smith" end
 
 ## Comments & Docs
 
-- Prefer LDoc-style block comments above functions over inline "how" comments inside them:
-
-```lua
---- Count items matching itemID across all bags (stack-aware).
----@param itemID number
----@return number
-local function count_item_in_bags(itemID)
-    ...
-end
-```
-
-- Comments explain **why** (non-obvious invariants, client gotchas, intent), not **how**.
+- **Comments are rare (user rule 2026-08-25).** Code must speak for itself. If a comment restates the code, delete it. If it explains how the code works, restructure the code so names explain it.
+- **No history in code.** Never write "was X, now Y", "fixed on <date>", "live-verified", or regression stories — history lives in git and `.ai/` (memories/ARCHITECTURE), not in comments.
+- Comments are allowed ONLY for a genuinely non-obvious **why** (a client quirk or invariant) — one short line, not a paragraph.
+- Keep LDoc annotations (`---@param`/`---@return`) — they are the LSP contract, not prose — and one short line per module/file stating its responsibility. One-line function summaries are fine; multi-line prose is not.
 - `-- TODO:` missing feature; `-- FIXME:` problem in existing code.
 - When a comment starts explaining a complicated body, that body probably should be its own function.
 

@@ -1,17 +1,11 @@
 -- ArenaChillPrep — Data/Items
--- Static item catalog + class → items mapping. Currently: Warlock →
--- healthstones (auto-trade) + soulstones (workflow rank data). Future
--- categories: food, water, totems, ...
---
--- Healthstone IDs (verified against the TBC item database): each rank has a
--- PAIR of IDs — historical duplicates. Both IDs of a
--- rank must be tracked (a player may hold either).
+-- Static item catalog + class → items mapping. Healthstone ranks 1-5 are
+-- historical ID pairs — both IDs of a rank must be tracked.
 
 ---@type ACP
 local _, ACP = ...;
 
--- CLASS_WARLOCK is NOT defined as a global on TBC Anniversary FrameXML
--- (retail-only constant). Guarded single source lives in Data/Constants.
+-- Not a global on TBC FrameXML (retail-only constant).
 local CLASS_WARLOCK = ACP.Data.Constants.CLASS_WARLOCK;
 
 ACP.Data = ACP.Data or {};

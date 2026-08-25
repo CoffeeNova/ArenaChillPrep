@@ -1,13 +1,4 @@
 -- ArenaChillPrep — Tests/stubs/wow_stubs.lua
--- Minimal WoW API stubs so the addon loads and runs under plain LuaJIT.
---
--- Some modules capture globals at file scope (GetTime, IsInInstance,
--- UnitExists, UnitIsUnit, UnitAffectingCombat, UnitIsDeadOrGhost,
--- TradeFrame, ERR_TRADE_COMPLETE, C_UnitAuras, C_Timer, ...). Those stubs
--- read from the mutable `_G.__stub` state table, so tests mutate
--- `_G.__stub` instead of replacing the globals. Functions read at call
--- time (containers, UnitClass, GetNumPartyMembers, ...) can be overridden
--- directly by tests.
 
 local _G = _G;
 
@@ -102,12 +93,6 @@ _G.C_Item = {
 _G.ItemLocation = { CreateFromBagAndSlot = function() return {} end };
 
 -- ---- spellbook (read at call time; WorkflowSpellbook scan) ----
--- Legacy TBC spellbook API: GetNumSpellTabs / GetSpellTabInfo (offset +
--- numSpells per tab) / GetSpellBookItemInfo / GetSpellBookItemName /
--- IsPassiveSpell all take the bookType STRING "spell"/"pet" (BOOKTYPE_SPELL —
--- the 20506 form; "player" is retail-only and must return nothing here).
--- Default state is an empty book so scan() exercises the static fallback;
--- tests populate __stub.spellbookTabs / __stub.spellbookItems / spellInfo.
 _G.GetNumSpellTabs = function()
     return #_G.__stub.spellbookTabs;
 end;
@@ -244,9 +229,6 @@ function _G.CreateFrame(frameType, name, parent, template)
 end;
 
 -- ---- keybindings (WorkflowEngine hotkey, read at call time) ----
--- Real-client semantics: binding a key to a button CLICK removes any command
--- binding on that key (and vice versa). resolveCastKey/takeoverCastKey depend
--- on this — after a takeover, GetBindingKey(command) must be nil.
 function _G.SetBindingClick(key, buttonName)
     _G.__stub.bindingClicks = _G.__stub.bindingClicks or {};
     _G.__stub.bindingClicks[key] = buttonName;
@@ -290,9 +272,6 @@ function _G.GetBindingKey(command)
 end;
 
 -- ---- override bindings (SetOverrideBindingClick/ClearOverrideBindings) ----
--- Real-client semantics: an override intercepts the key WITHOUT displacing
--- the player's command binding — bindingKeys/bindingActions stay intact
--- (that is the whole point vs SetBindingClick).
 function _G.SetOverrideBindingClick(owner, isPriority, key, buttonName)
     _G.__stub.overrideClicks = _G.__stub.overrideClicks or {};
     _G.__stub.overrideClicks[key] = buttonName;

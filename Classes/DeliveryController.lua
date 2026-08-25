@@ -1,16 +1,7 @@
 -- ArenaChillPrep — Classes/DeliveryController
--- Orchestrator — the only module that makes decisions.
--- State machine: IDLE -> ACTIVE -> TRADING -> DONE (see .ai/ARCHITECTURE.md 2.5).
---
--- Responsibilities:
---   - bracket gate on ACP_BUFF_GAINED (Settings "brackets.<bracket>", 2v2 default);
---   - runtime-only `givenTo` set (reset on ACP_BUFF_LOST, never saved);
---   - gate safety: start trades only while getRemainingTime() >= gateSafetySeconds;
---   - partner detection: first non-self party member (party1..N — arena
---     teammates are always party slots, no manual selection);
---   - "ready" decision: an enabled item category has count >= setting.count;
---   - tradeDelay pause before opening the trade;
---   - combat deferral via PLAYER_REGEN_DISABLED / PLAYER_REGEN_ENABLED.
+-- Orchestrator: bracket gate → wait for items → open trade → hand off.
+-- State machine: IDLE -> ACTIVE -> TRADING -> DONE. `givenTo` is runtime-only
+-- (reset on ACP_BUFF_LOST, never saved).
 
 ---@type ACP
 local _, ACP = ...;
@@ -30,8 +21,7 @@ local DeliveryController = {
     --- "IDLE" | "ACTIVE" | "TRADING" | "DONE"
     state = DS.IDLE,
 
-    --- Runtime-only set of partners already served this prep (unit tokens).
-    --- Reset on ACP_BUFF_LOST; never persisted to ArenaChillPrepDB.
+    --- Partners already served this prep (runtime-only, reset on ACP_BUFF_LOST).
     ---@type table<string, boolean>
     givenTo = {},
 
@@ -145,10 +135,8 @@ function DeliveryController:findPartner()
     return nil;
 end
 
---- Whether auto-trade to `unit` is allowed by the "do not trade to same class"
---- setting. When the setting is on, teammates of the player's own class are
---- skipped (e.g. a Warlock won't auto-trade other Warlocks). The setting is
---- class-agnostic — it always compares against the player's own class.
+--- Whether auto-trade to `unit` is allowed by the "do not trade to same
+--- class" setting (always compares against the player's own class).
 ---@param unit string
 ---@return boolean
 function DeliveryController:partnerClassAllowed(unit)
@@ -274,17 +262,14 @@ function DeliveryController:checkReady()
         ACP.TradeManager:startTrade(partner);
 
         -- One-shot open timeout: InitiateTrade can fail silently (out of
-        -- range, partner offline/dead) without firing TRADE_SHOW or
-        -- TRADE_CLOSED. Without this the controller would stay TRADING
-        -- forever. ACP_TRADE_OPENED (window shown) cancels it.
+        -- range, partner offline/dead) without any window event.
         ACP.Utils.Timers:after("TradeOpen", ACP.Data.Constants.TRADE_OPEN_TIMEOUT, function()
             if (self.state ~= DS.TRADING) then
                 return; -- already resolved (window opened / trade completed)
             end
 
-            -- Defense in depth: even if this timer was NOT cancelled (a stale
-            -- C_Timer firing after cancel — see Utils/Timers), never cancel a
-            -- trade whose window is actually up.
+            -- Never cancel a trade whose window is actually up (a stale
+            -- C_Timer can fire after cancel — see Utils/Timers).
             if (TradeFrame and TradeFrame:IsShown()) then
                 return;
             end
@@ -297,10 +282,8 @@ function DeliveryController:checkReady()
 end
 
 --- Whether an inbound (partner-initiated) trade window should be taken over
---- and filled with prep items. True while the controller is actively prepping
---- (ACTIVE) and the trade partner is a teammate — i.e. someone opened a trade
---- with us during arena prep. In that case we deliver into the already-open
---- window instead of starting our own trade.
+--- and filled with prep items: prepping (ACTIVE) and the partner is a
+--- teammate (never inject items into a trade with a random person).
 ---@return boolean
 function DeliveryController:shouldTakeOverInboundTrade()
     if (self.state ~= DS.ACTIVE) then
@@ -337,10 +320,8 @@ function DeliveryController:shouldTakeOverInboundTrade()
     return true;
 end
 
---- ACP_TRADE_OPENED: the trade window is up. Cancel any pending scheduled
---- attempt, credit the partner (for an inbound trade it isn't set yet), move
---- to TRADING so we stop polling / starting a second trade, then fill the
---- placement queue.
+--- ACP_TRADE_OPENED: cancel pending scheduling, credit the partner, stop
+--- polling, fill the placement queue.
 ---@param partner string
 function DeliveryController:onTradeOpened(partner)
     ACP.Utils.Timers:cancel("TradeOpen");
@@ -357,10 +338,8 @@ function DeliveryController:onTradeOpened(partner)
     ACP.TradeManager:queueItems(ACP.TradePlanner:buildQueue());
 end
 
---- Every-tick readiness poll while in ACTIVE. Safety net for events that may
---- be missed on 2.5.5 (e.g. BAG_UPDATE on crafted healthstones). Uses a
---- one-shot self-rescheduling ticker: while state stays ACTIVE it re-checks;
---- once a trade is scheduled/started it stops polling.
+--- Every-tick readiness poll while ACTIVE (safety net for events that may be
+--- missed on 2.5.5).
 function DeliveryController:startCheckTicker()
     ACP.Utils.Timers:interval("DeliveryCheck", 0.5, function()
         -- Only poll while ACTIVE; checkReady enforces the pending-timer guards.
@@ -415,13 +394,9 @@ function DeliveryController:onItemsChanged()
     end
 end
 
---- ACP_TRADE_COMPLETED: mark the partner, decide what's next.
---- Handles both auto-initiated trades (currentPartner) and manual trades the
---- player completed himself (TradeManager.partnerUnit recorded on TRADE_SHOW).
---- While an unserved partner remains, the controller returns to ACTIVE — even
---- if no items are left right now: the next crafted item (ACP_ITEMS_CHANGED)
---- goes to the next partner (3v3/5v5). Only when every partner has been
---- served does it go DONE.
+--- ACP_TRADE_COMPLETED: mark the partner (normalized to a party token — a
+--- manual trade records the player NAME, which would leave the token unmarked
+--- and re-offer the same teammate). Next partner → ACTIVE; none → DONE.
 function DeliveryController:onTradeCompleted()
     -- Normalize the partner to a party unit token before recording it in
     -- `givenTo`: auto-trades carry the token (currentPartner), but a MANUAL
@@ -462,10 +437,8 @@ function DeliveryController:onTradeCompleted()
     end
 end
 
---- ACP_TRADE_FAILED: silent retry with backoff, up to MAX_TRADE_RETRIES.
---- Only acts while TRADING: a stray failure verdict arriving after a reset
---- (e.g. the window was closed after the buff faded / gates opened) must not
---- return the controller to ACTIVE and risk a trade after the gates open.
+--- ACP_TRADE_FAILED: silent retry with backoff. Only acts while TRADING — a
+--- stray failure verdict after a reset must not resume trading.
 function DeliveryController:onTradeFailed(reason)
     if (self.state ~= DS.TRADING) then
         ACP:debugPrint("ignoring stray trade failure: %s (state: %s)", tostring(reason), self.state);
@@ -494,8 +467,7 @@ function DeliveryController:onTradeFailed(reason)
 end
 
 --- PLAYER_REGEN_DISABLED: combat cancels pending attempts; an already-open
---- window is left untouched. The state is NOT changed — the combat flag clears
---- on PLAYER_REGEN_ENABLED and the retry resumes from the same state.
+--- window is left untouched.
 function DeliveryController:onCombatStart()
     ACP.Utils.Timers:cancel("TradeDelay");
     ACP.Utils.Timers:cancel("TradeRetry");

@@ -127,9 +127,6 @@ end
 
 function testValidateToleratesLegacySkipFlag()
     -- The per-step skipIfBuffed flag was REMOVED (2026-08-25) — saved data may
-    -- still carry it (any type); the validator must accept it (the engine
-    -- ignores it).
-    -- Arrange
     local step = { type = "cast", spellID = 5697, skipIfBuffed = "yes" };
     -- Act
     local ok, err = W:validateStep(step);
@@ -173,12 +170,16 @@ function testStoneRanksHealthstone()
     local count = 0;
     for _ in pairs(W.stoneRanks) do count = count + 1; end
 
-    -- Assert
-    lu.assertEquals(count, 10);
+    -- Assert: 6 healthstone ranks + Create Spellstone rank 4 only (ranks 1-3
+    -- were REMOVED 2026-08-25 — no arena use, live tests showed ranks 2-3
+    -- upgrade to Master anyway).
+    lu.assertEquals(count, 7);
     lu.assertEquals(W.stoneRanks[27230].itemName, "Master Healthstone");
     lu.assertEquals(W.stoneRanks[11730].itemName, "Major Healthstone");
-    lu.assertEquals(W.stoneRanks[2362].itemName, "Spellstone");
     lu.assertEquals(W.stoneRanks[28172].itemName, "Master Spellstone");
+    lu.assertNil(W.stoneRanks[2362], "Create Spellstone rank 1 removed");
+    lu.assertNil(W.stoneRanks[28171], "Create Spellstone rank 2 removed");
+    lu.assertNil(W.stoneRanks[28173], "Create Spellstone rank 3 removed");
 end
 
 function testStoneRanksCarryVariantPairs()
@@ -216,9 +217,6 @@ end
 
 function testSoulLinkCatalogEntryUses19028()
     -- 6307 is the IMP's Blood Pact passive, not Soul Link (verified against
-    -- WeakAurasTemplates TBC data 2026-08-22). The old 6307 entry made the UI
-    -- show "Blood Pact" and the skip check match the imp's always-on aura, so
-    -- Soul Link was never cast. The catalog must point at 19028.
     local entry = nil;
     for _, list in pairs(W.spells) do
         for _, e in ipairs(list) do
@@ -232,6 +230,35 @@ function testSoulLinkCatalogEntryUses19028()
     lu.assertEquals(entry.spellID, 19028);
     lu.assertEquals(entry.buffSpellID, 19028);
     lu.assertIsFalse(entry.canTargetParty);
+end
+
+function testDemonArmorCatalogEntryIsTbcMaxRank()
+    -- Demon Armor used to ship as rank 1 (706), which the 2.5.6 client
+    local entry = nil;
+    for _, list in pairs(W.spells) do
+        for _, e in ipairs(list) do
+            if (e.name == "Demon Armor") then
+                entry = e;
+            end
+        end
+    end
+
+    lu.assertNotIsNil(entry);
+    lu.assertEquals(entry.spellID, 27260);
+    lu.assertEquals(entry.buffSpellID, 27260);
+    lu.assertIsFalse(entry.canTargetParty);
+end
+
+function testRemovedSpellsAbsentFromCatalog()
+    -- Create Soulstone (693) and Ritual of Summoning (698) were REMOVED
+    -- (2026-08-25, user decision — no arena use / no such spell on this
+    -- client). No spell entry may reference them.
+    for _, list in pairs(W.spells) do
+        for _, e in ipairs(list) do
+            lu.assertNotEquals(e.spellID, 693, "Create Soulstone removed");
+            lu.assertNotEquals(e.spellID, 698, "Ritual of Summoning removed");
+        end
+    end
 end
 
 function testStoneRanksCreateStepLabel()
@@ -307,9 +334,6 @@ function testEquipItemsCatalog()
 end
 
 -- ---- WorkflowSpellbook rebuild (the live spellbook scan was REMOVED
--- 2026-08-24 — the probe-based scan never actually ran. The catalog is
--- rebuilt from the static data: full catalog for a Warlock, empty for other
--- classes.) ----
 
 local function spellbookGroup(category, name)
     for _, group in ipairs(ACP.WorkflowSpellbook.groupsByCategory[category] or {}) do

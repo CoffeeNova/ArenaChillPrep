@@ -1,21 +1,14 @@
 -- ArenaChillPrep — Classes/UI/Widgets
--- Reusable options widgets (vanilla API, no libraries): boxed containers,
--- headers, dividers, checkboxes, sliders, buttons and the status line.
--- Every interactive widget attaches a GameTooltip tooltip when given one.
--- Widgets know nothing about ACP.Settings — callers pass getter/setter
--- closures. All geometry constants live here (one place to tune spacing).
+-- Reusable options widgets (vanilla API, no libraries). Widgets know nothing
+-- about ACP.Settings — callers pass getter/setter closures; all geometry
+-- constants live here.
 --
 -- Client gotchas honored (see .ai/skills/wow-api-20506):
---   * CreateFrame(..., "BackdropTemplate") is MANDATORY before SetBackdrop;
---   * OptionsSliderTemplate does NOT create a global "<name>Text" — the
---     label is built manually above the slider;
---   * no Ace — Blizzard templates only (UICheckButtonTemplate,
---     OptionsSliderTemplate, UIPanelButtonTemplate, UIDropDownMenuTemplate,
---     InputBoxTemplate, UIPanelScrollFrameTemplate);
---   * UIDropDownMenuTemplate / InputBoxTemplate name their children after the
---     frame's name ("<name>Text", "<name>Button", "<name>Left", ...) — every
---     dropdown/input needs a UNIQUE global name, otherwise anonymous frames
---     collide on the "Text"/"Button"/"Left" child globals.
+--   * CreateFrame(..., "BackdropTemplate") is mandatory before SetBackdrop;
+--   * OptionsSliderTemplate does NOT create a global "<name>Text" — the label
+--     is built manually;
+--   * UIDropDownMenuTemplate / InputBoxTemplate name their children from the
+--     frame name — every dropdown/input needs a unique global name.
 
 ---@type ACP
 local _, ACP = ...;
@@ -88,13 +81,9 @@ local function attachTooltip(widget, tooltipText)
     end);
 end
 
---- WoW binding keys are letters/digits OR punctuation characters (e.g. ";",
---- "[", "/") reported by OnKeyDown as the literal key name, optionally
---- prefixed by SHIFT-/CTRL-/ALT-, or named keys (F1, MOUSEWHEELUP, BUTTON3).
---- Reject anything else: an invalid key would corrupt bindings-cache.wtf on
---- save and kill ALL keybindings (Esc/Enter/movement/hotkeys) after /reload.
---- NOTE: Lua patterns have no `|` alternation, so the modifier prefix is
---- stripped with gsub (not a regex group) before the base check.
+--- WoW binding keys are letters/digits/punctuation (optionally SHIFT-/CTRL-/
+--- ALT-prefixed) or named keys (F1, BUTTON3, MOUSEWHEELUP). An invalid key
+--- would corrupt bindings-cache.wtf on save and kill ALL keybindings.
 ---@param key string
 ---@return boolean
 local function isSafeBindingKey(key)
@@ -267,23 +256,12 @@ function UI.Button(parent, text, x, y, w, h, onClick, tooltipText)
     return button;
 end
 
---- Dropdown (UIDropDownMenuTemplate) with a persistent value-based selection.
---- Items are rendered from the `items` array of { value, label, isTitle? }
---- (or a function returning such an array, evaluated on every menu open).
---- The collapsed label shows the label of the current getter() value, or the
---- `text` placeholder when getter() returns nil (e.g. an "add step" picker).
----
---- 20506 GOTCHA (live-verified 2026-08-20): the client's
---- UIDropDownMenu_SetSelectedValue / UIDropDownMenu_Refresh do NOT reliably
---- update the collapsed label — the box keeps the template's default "Custom"
---- (and stale selections after add/delete) until the menu is opened once.
---- The collapsed text is therefore always applied EXPLICITLY via
---- UIDropDownMenu_SetText — the same pattern every working 20506 addon
---- (Gargul, Ranker, BGHistorian, AtlasLoot, ItemRack, ...) uses. See
---- .ai/skills/wow-api-20506/SKILL.md.
+--- Dropdown (UIDropDownMenuTemplate) with value-based selection; the collapsed
+--- label is applied EXPLICITLY via UIDropDownMenu_SetText (the client's
+--- SetSelectedValue/Refresh do not reliably update it on 2.5.x).
 ---@param parent Frame
 ---@param name string  unique global name (the template names its children from it)
----@param text string  initial/placeholder label shown when nothing is selected
+---@param text string  placeholder shown when nothing is selected
 ---@param x number
 ---@param y number
 ---@param width number
@@ -346,7 +324,6 @@ function UI.Dropdown(parent, name, text, x, y, width, items, getter, setter, too
             info.value = item.value;
 
             if (item.isTitle) then
-                -- Section header inside the menu (not clickable, no checkmark).
                 info.isTitle = true;
                 info.notCheckable = true;
             else
@@ -355,14 +332,8 @@ function UI.Dropdown(parent, name, text, x, y, width, items, getter, setter, too
                 info.func = function(menuButton)
                     setter(menuButton.value);
                     UIDropDownMenu_SetSelectedValue(dd, menuButton.value);
-                    -- 20506 GOTCHA: UIDropDownMenu_SetSelectedValue internally
-                    -- calls UIDropDownMenu_Refresh, which writes the collapsed
-                    -- label from the (now closed) menu's button state — the
-                    -- fallback "Custom", the raw value, or a stale item — and
-                    -- OVERRIDES the label the setter/refresh just applied. Re-
-                    -- apply the label here so the addon's item label always
-                    -- wins (also fixes Target dropdowns in workflow steps, where
-                    -- the collapsed text otherwise shows a wrong value).
+                    -- SetSelectedValue triggers a Refresh that overwrites the
+                    -- collapsed label with stale state — re-apply it.
                     applyLabel();
                     CloseDropDownMenus();
                 end;
@@ -428,20 +399,9 @@ function UI.TextInput(parent, name, x, y, w, h, getter, setter, tooltipText)
     return input;
 end
 
---- Direct key-binding capture button. Clicking the button enters capture mode;
---- the next key (with Shift/Ctrl/Alt modifiers) is written through setter().
---- Escape clears the binding; clicking again cancels capture. The pattern is
---- the same as Blizzard/Ace keybinding controls and works on 20506 because
---- keyboard input is captured by a focused frame, not by an insecure API.
----
---- KEYBOARD-CAPTURE GOTCHA (verified 2026-08-21): a `Button` frame does NOT
---- support `SetFocus()` on the 2.5.5 client (only `EditBox` does), so a Button
---- can never receive keyboard focus and its `OnKeyDown` never fires. The key is
---- therefore captured by a hidden off-screen `EditBox` that is focused only
---- while capturing; `stopCapture()` hides it and clears focus so the game
---- regains the keyboard. The capture handler is installed on the EditBox and is
---- re-focused if focus is lost mid-capture (e.g. a stray click) so a key press
---- is never lost.
+--- Key-binding capture control. A `Button` cannot hold keyboard focus on
+--- 2.5.5 (only EditBox can), so the key is captured by a hidden off-screen
+--- EditBox that is focused only while capturing.
 ---@param parent Frame
 ---@param name string
 ---@param text string  placeholder when unbound (caller-passed L.* value)
@@ -553,8 +513,7 @@ function UI.Keybind(parent, name, text, x, y, w, h, getter, setter, tooltipText,
         stopCapture();
     end
 
-    -- capture() must be declared before startCapture's closure references it
-    -- (otherwise Lua resolves the upvalue as a global nil).
+    -- capture() must be declared before startCapture's closure references it.
     local function startCapture()
         button.waitingForKey = true;
 
@@ -567,9 +526,8 @@ function UI.Keybind(parent, name, text, x, y, w, h, getter, setter, tooltipText,
         button:SetText(captureText);
     end
 
-    -- Keyboard is captured exclusively by the focused EditBox. If focus is lost
-    -- mid-capture (e.g. a stray click elsewhere) re-grab it so the next key is
-    -- not lost; ignore the loss once capture has legitimately ended.
+    -- Keyboard is captured exclusively by the focused EditBox; re-grab focus
+    -- if it is lost mid-capture (a stray click).
     captureBox:SetScript("OnKeyDown", function(_, key)
         capture(key);
     end);
@@ -619,10 +577,8 @@ function UI.Keybind(parent, name, text, x, y, w, h, getter, setter, tooltipText,
     return button;
 end
 
---- Scrollable container (UIPanelScrollFrameTemplate) for lists longer than the
---- visible area. The template's embedded scrollbar + mouse wheel handle the
---- scrolling; callers add child frames to ScrollChild and call sf:Refresh()
---- after resizing the child.
+--- Scrollable container (UIPanelScrollFrameTemplate); callers add children to
+--- ScrollChild and call sf:Refresh() after resizing the child.
 ---@param parent Frame
 ---@param x number
 ---@param y number

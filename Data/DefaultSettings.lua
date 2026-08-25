@@ -32,20 +32,11 @@ ACP.Data.DefaultSettings = {
     workflows = {
         enabled = true, -- Master workflow switch (General tab).
         slotCount = 5, -- How many slots are visible initially; the UI can add more.
-        skipIfBuffedDefault = true, -- Master switch: skip cast/summon/createItem steps whose goal is already met (no per-step flag, 2026-08-25).
+        skipIfBuffedDefault = true, -- Master switch: skip steps whose goal is already met.
         definitions = {
-            -- Step schema: { type, spellID, spellName?, target?, itemID? }
-            -- (+ { type="equipItem", itemID, itemName? }).
-            --
-            -- Slots 1-5 are the five battle-tested Warlock arena-prep workflows
-            -- used and verified by the author (2s/3s/5s, with/without
-            -- Sacrifice). Every step stores the exact rank the client conjures
-            -- on TBC 2.5.5 (the ranks coexist — the client does NOT auto-upgrade
-            -- old-rank casts), so a step is "done" only when THAT rank's result
-            -- is present (Master Healthstone = 22105 via 27230, Master
-            -- Spellstone = 22646 via 28172, Fire Shield = 27269, etc.). All five
-            -- ship enabled; 1-2 are the 2v2 variants, 3-4 the 3v3 variants, 5 the
-            -- 5v5 variant.
+            -- Slots 1-5 ship the five battle-tested Warlock prep workflows
+            -- (2s/3s/5s, with/without Sacrifice); every step stores the exact
+            -- rank the client conjures on TBC 2.5.5.
             [1] = {
                 enabled = true,
                 name = "2s with sacrifice",

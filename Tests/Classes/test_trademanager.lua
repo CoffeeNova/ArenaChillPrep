@@ -1,7 +1,4 @@
 -- ArenaChillPrep — Tests/Classes/test_trademanager.lua
--- Covers Classes/TradeManager.lua: startTrade, cancel, getItemGUID,
--- processItemQueue, queueItems (the queue itself is built by
--- Classes/TradePlanner.lua).
 
 local ACP = _G.ACP;
 local TM = ACP.TradeManager;

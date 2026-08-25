@@ -1,7 +1,4 @@
 -- ArenaChillPrep — Tests/loader.lua
--- Loads every addon module in TOC order through the vararg chain
--- (local _, ACP = ...; return ACP;), mirroring the real load order.
--- The addon root path is passed as the first vararg by run_tests.lua.
 
 local ADDON_ROOT = ...;
 

@@ -1,8 +1,4 @@
 -- ArenaChillPrep — Tests/Utils/test_timers.lua
--- Covers Utils/Timers.lua: after/interval/cancel + stale-callback guard.
---
--- Other suites swap ACP.Utils.Timers for the sync recorder, so every test
--- here re-installs the REAL Timers module first.
 local ACP = _G.ACP;
 local Timers = ACP.Utils.Timers;
 

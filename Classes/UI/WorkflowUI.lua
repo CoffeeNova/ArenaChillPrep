@@ -1,21 +1,8 @@
 -- ArenaChillPrep — Classes/UI/WorkflowUI
--- Character-local workflow editor — PURE LAYOUT/RENDER (refactor Phase 6).
--- The editor is built around:
---   select a slot -> assemble/check the sequence -> run it by key.
---
--- Layout (top -> bottom):
---   status line        — engine state + slot state + step count
---   workflow defaults  — skip-completed-steps master switch + description
---   workflow editor    — selector, add/clone/delete, name, enabled, key bind
---   steps              — table header + scrollable step list filling the rest
---
--- Data operations (CRUD, step building, settings paths) live in
--- ACP.WorkflowRepository; key-binding I/O lives in
--- ACP.WorkflowKeybindController. This module only renders and delegates.
---
--- Spell choices come from ACP.WorkflowSpellbook: Add Step shows one entry per
--- learned spell name (plain name only). Each step always uses the highest
--- learned rank — rank is not user-selectable.
+-- Workflows tab — pure layout/render. CRUD + the step factory live in
+-- ACP.WorkflowRepository; key-binding I/O in ACP.WorkflowKeybindController.
+-- Spell choices come from ACP.WorkflowSpellbook.
+
 ---@type ACP
 local _, ACP = ...;
 
@@ -181,11 +168,8 @@ local function spellLabel(spellID, fallback)
     return fallback or ("#" .. tostring(spellID));
 end
 
---- Display name for a spell step row. Stone-creating steps (Create Healthstone
---- / Create Spellstone) show the rank-specific stone label ("Create Master
---- Healthstone") — the plain GetSpellInfo name is just "Create Healthstone" for
---- every rank, so only the spellID would disambiguate. Other steps keep the
---- localized spell name.
+--- Display name for a spell step row; stone steps show the rank-specific
+--- label (GetSpellInfo returns the plain name for every rank).
 ---@param step table
 ---@param entry table|nil
 ---@return string
@@ -348,11 +332,8 @@ end
 
 local spellCellWidthCache;
 
---- Width of the step-row spell dropdown: exactly as wide as the longest
---- possible collapsed label (spell name, per-rank stone label, the
---- "<name> (<pet>)" pet label, or an equip-item name) plus the dropdown
---- chrome — so the control never spills into the Target column. The cache is
---- reset on ACP_SPELLBOOK_CHANGED (the catalog can change).
+--- Width of the step-row spell dropdown: the longest possible collapsed
+--- label plus chrome, so the control never spills into the Target column.
 ---@return number
 local function spellCellWidth()
     if (spellCellWidthCache) then
@@ -444,13 +425,8 @@ function WorkflowUI:cloneWorkflow()
     self:refresh();
 end
 
---- Delete the selected workflow. Keeps at least WORKFLOW_DEFAULT_SLOTS: at the
---- floor the definition is reset to empty instead. Above the floor the slot is
---- removed, later slots shift down, and their key bindings move with them
---- (ACP_WORKFLOW<i+1> -> ACP_WORKFLOW<i>) so hotkeys stay on the right content.
---- The selection moves to the PREVIOUS workflow (slot - 1) so the editor
---- immediately shows that workflow's steps; deleting slot 1 falls back to the
---- shifted-up former slot 2 (now slot 1).
+--- Delete the selected workflow. Key bindings of the later slots shift down
+--- with their content; the selection moves to the previous workflow.
 function WorkflowUI:deleteWorkflow()
     local C = ACP.Data.Constants;
     local count = workflowCount();

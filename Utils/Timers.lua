@@ -1,16 +1,7 @@
 -- ArenaChillPrep — Utils/Timers
--- Named timers over C_Timer (available on TBC Anniversary, Interface 20506).
--- Each timer is registered under a name; starting a timer with the same name
--- cancels the previous one.
---
--- IMPORTANT (verified live 2026-08-10): on this client a C_Timer handle's
--- Cancel() does NOT reliably stop the underlying timer — a "cancelled" timer
--- can still fire later. So each entry here carries an `active` flag and must
--- still be the entry registered under its name when the callback runs;
--- otherwise it bails. Without this, a cancelled TradeOpen timer fired after
--- TRADE_SHOW (false "window did not open" timeout that killed a live trade)
--- and the cancelled DeliveryCheck poll ticker kept re-trading with no
--- backoff.
+-- Named timers over C_Timer. On this client a C_Timer handle's Cancel() does
+-- NOT reliably stop the timer, so each entry carries an `active` flag and
+-- must still be the entry registered under its name when the callback runs.
 
 ---@type ACP
 local _, ACP = ...;

@@ -307,8 +307,8 @@ function OptionsUI:buildGeneral(content, w, h)
         end,
         L.enabledTooltip);
 
-    -- Workflow engine master switch (Phase 10). Toggling it grays out the
-    -- controls on the Workflows tab via setWorkflowsEnabled (in refresh()).
+    -- Workflow engine master switch; toggling it grays out the Workflows tab
+    -- via setWorkflowsEnabled (in refresh()).
     Controls.workflowsEnabled = UI.Checkbox(content, "ACPWorkflowsEnabledCheck",
         L.workflow.engineEnabledLabel, PADDING, -38,
         function() return ACP.Settings:get("workflows.enabled"); end,

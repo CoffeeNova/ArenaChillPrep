@@ -1,8 +1,4 @@
 -- ArenaChillPrep — Tests/run_tests.lua
--- Test runner: luacov (coverage) + luaunit (tests) + WoW stubs + loader.
--- Usage:  luajit Tests/run_tests.lua   (or .\Tests\run-tests.ps1)
--- Exit codes: 0 = all tests pass and coverage >= 90%; 1 = test failures;
---             2 = coverage below 90%.
 local script = arg and arg[0] or "run_tests.lua";
 local ROOT = script:match("^(.*)[/\\][^/\\]+$") or ".";
 local ADDON_ROOT = ROOT:match("^(.*)[/\\][^/\\]+$") or ".";
@@ -51,9 +47,6 @@ ACP.TradeManager:_init();
 ACP.DeliveryController:_init();
 
 -- ---- test suites (each defines global test* functions) ----
--- Paths mirror the addon structure: bootstrap at the root, the rest under
--- Data/ Utils/ Classes/. Order matters (some suites capture file-scope state,
--- e.g. test_deliverycontroller saves the real Timers).
 local suites = {"test_bootstrap", "Data/test_constants", "Data/test_items", "Data/test_defaultsettings",
                 "Data/test_localization", "Data/test_workflows", "Utils/test_tables", "Utils/test_utils_items",
                 "Utils/test_timers", "Classes/test_events", "Classes/test_settings", "Classes/test_arenaprep",

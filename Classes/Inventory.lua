@@ -1,12 +1,6 @@
 -- ArenaChillPrep — Classes/Inventory
--- Bag scanner and item counters (stack-aware).
---
--- Scans bags 0..4 (ACP.Data.Constants.NUM_BAGS), counting stackCount
--- (healthstones stack up to 10). Tracks the itemIDs the current class can pass
--- (from ACP.Data.Items.classItems). On BAG_UPDATE / BAG_UPDATE_DELAYED the
--- counts are refreshed and ACP_ITEMS_CHANGED fires for any tracked item
--- whose count changed.
--- findItem delegates to Utils/Items.findItemInBags (simplified).
+-- Bag scanner and stack-aware item counters for the tracked (class-passable)
+-- itemIDs; fires ACP_ITEMS_CHANGED when a tracked count changes.
 
 ---@type ACP
 local _, ACP = ...;
@@ -27,10 +21,8 @@ local Inventory = {
 ---@type Inventory
 ACP.Inventory = Inventory;
 
---- Build the set of tracked itemIDs for the current class from the catalog.
---- Called at init and again on PLAYER_LOGIN: UnitClass("player") can be nil
---- during ADDON_LOADED (character not loaded yet), which would leave the
---- tracked set empty and every counter at 0.
+-- Called at init and again on PLAYER_LOGIN: UnitClass("player") is nil during
+-- ADDON_LOADED, which would leave the tracked set empty.
 function Inventory:_buildTrackedItems()
     local classItems = ACP.Data.Items.classItems;
     local englishClass = select(2, UnitClass("player"));
@@ -46,7 +38,6 @@ function Inventory:_buildTrackedItems()
     ACP:debugPrint("tracked items rebuilt (class: %s, count: %d)", tostring(englishClass), self:getTrackedCount());
 end
 
---- Number of tracked itemIDs (diagnostics).
 ---@return number
 function Inventory:getTrackedCount()
     local count = 0;
@@ -58,8 +49,6 @@ function Inventory:getTrackedCount()
     return count;
 end
 
---- Recount every tracked item. Fires ACP_ITEMS_CHANGED for each item whose
---- count changed (so listeners react only to real changes, not spam).
 function Inventory:_recountAll()
     for itemID in pairs(self.trackedItemIDs) do
         local count = self:countItem(itemID);
@@ -72,7 +61,6 @@ function Inventory:_recountAll()
     end
 end
 
---- Count a single item across all bags (stack-aware).
 ---@param itemID number
 ---@return number
 function Inventory:countItem(itemID)
@@ -102,7 +90,6 @@ function Inventory:_init()
 
     self:_buildTrackedItems();
 
-    -- The player class is only reliable after login; rebuild then.
     ACP.Events:register("Inventory.PLAYER_LOGIN", "PLAYER_LOGIN", function()
         self:_buildTrackedItems();
         self:_recountAll();
@@ -116,19 +103,16 @@ function Inventory:_init()
         self:_recountAll();
     end);
 
-    -- Initial fill so getCount() is meaningful before the first BAG_UPDATE.
     self:_recountAll();
 end
 
---- Total count of `itemID` across all bags (stack-aware, cached).
 ---@param itemID number
 ---@return number
 function Inventory:getCount(itemID)
     return self.Counts[itemID] or 0;
 end
 
---- First location of `itemID` in the bags, skipping soulbound items
---- (bound = 11th container value). Returns bag, slot or nil.
+--- First bag slot holding `itemID`, skipping soulbound items.
 ---@param itemID number
 ---@return number|nil bag, number|nil slot
 function Inventory:findItem(itemID)

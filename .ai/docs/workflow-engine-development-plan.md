@@ -461,7 +461,7 @@ ACP.Data.Workflows = {
         buffs = {
             -- Self-only armors (canTargetParty = false)
             { spellID = 28176, name = "Fel Armor",     isCastTime = false, canTargetParty = false, buffSpellID = 28176 },
-            { spellID = 706,   name = "Demon Armor",   isCastTime = false, canTargetParty = false, buffSpellID = 706 },
+            { spellID = 27260, name = "Demon Armor",   isCastTime = false, canTargetParty = false, buffSpellID = 27260 },
             -- Party-buffable
             { spellID = 5697,  name = "Unending Breath", isCastTime = false, canTargetParty = true,  buffSpellID = 5697 },
             { spellID = 6307,  name = "Soul Link",       isCastTime = false, canTargetParty = false, buffSpellID = 6307 },
@@ -475,18 +475,16 @@ ACP.Data.Workflows = {
         },
         createItem = {
             { spellID = 6201, name = "Create Healthstone", isCastTime = true, needsShard = true, itemID = 22105 },
-            { spellID = 693,    name = "Create Soulstone",    isCastTime = true, needsShard = true, itemID = 22103 },
         },
         utility = {
             { spellID = 29893, name = "Ritual of Souls",      isCastTime = true, needsShard = true },
-            { spellID = 698,   name = "Ritual of Summoning",  isCastTime = true, needsShard = true },
         },
     },
     targets = { "player", "party1", "party2", "party3", "party4" },
 };
 ```
 
-> **Spell IDs verified in Phase 7 (2026-08-18)** — in-game `GetSpellInfo` + TBC spell lists of working addons. Corrections vs. the original placeholders: Fel Armor `28276`→`28176` (28276 = Lightwell Renew on this client), Create Healthstone `116761`→`6201` (TBC ranks are `6201…27230`), Ritual of Souls `58887`→`29893` (58887 is WotLK rank 2). Remaining unverified: the TBC max-rank ID of Fel Armor and the Create Soulstone rank pairing with item 22103 (marked `-- TODO` in `Data/Workflows.lua`). The catalog is extensible: adding a class = adding a `spells` subtable + a `classSpells` mapping (mirrors `Data.Items.classItems`).
+> **Spell IDs verified in Phase 7 (2026-08-18)** — in-game `GetSpellInfo` + TBC spell lists of working addons. Corrections vs. the original placeholders: Fel Armor `28276`→`28176` (28276 = Lightwell Renew on this client), Create Healthstone `116761`→`6201` (TBC ranks are `6201…27230`), Ritual of Souls `58887`→`29893` (58887 is WotLK rank 2). **2026-08-25 updates:** Demon Armor stores its TBC max rank `27260` (user-verified; the old rank-1 706 was replaced in the spellbook at 70 and never cast — see ADR 19); Create Soulstone (693) and Ritual of Summoning (698) were REMOVED (user decision — no arena use / no such spell on this client). The catalog is extensible: adding a class = adding a `spells` subtable + a `classSpells` mapping (mirrors `Data.Items.classItems`).
 
 ### 3.16 Integration with existing modules
 

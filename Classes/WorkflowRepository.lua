@@ -1,11 +1,6 @@
 -- ArenaChillPrep — Classes/WorkflowRepository
--- The workflow data layer: dot-path vocabulary for the per-character workflow
--- settings tree (ArenaChillPrepCharDB.workflows, routed through ACP.Settings)
--- PLUS the CRUD operations and the step factory (refactor Phase 6). Single
--- source for the "workflows.definitions.<slot>..." paths that WorkflowUI and
--- WorkflowEngine used to re-type at 12+ sites, and for the step-building
--- business rules the UI used to re-derive (step type / target / skip default
--- inference — the UI now only renders).
+-- Workflow data layer: settings-path vocabulary + CRUD + the step factory
+-- (step type / target inference — the UI only renders).
 
 ---@type ACP
 local _, ACP = ...;
@@ -95,12 +90,8 @@ function WorkflowRepository:addWorkflow()
     return slot;
 end
 
---- Clone a workflow slot into a NEW slot at the end. The definition (name,
---- enabled flag, steps) is deep-copied so the copy never shares nested tables
---- with the source; the key binding is NOT copied (a clone must be bound
---- separately). A non-empty name gets a localized " (copy)" suffix so the
---- selector stays unambiguous. Returns the new slot number, or nil when the
---- slot limit is reached or the source definition is missing.
+--- Deep-copied clone into a new slot at the end; the key binding is NOT
+--- copied and the name gets a localized " (copy)" suffix.
 ---@param sourceSlot number
 ---@return number|nil
 function WorkflowRepository:cloneWorkflow(sourceSlot)
@@ -128,12 +119,12 @@ function WorkflowRepository:cloneWorkflow(sourceSlot)
     return slot;
 end
 
---- Delete a workflow slot (data only — key bindings are migrated by
+--- Delete a slot (key bindings are migrated by
 --- WorkflowKeybindController:shiftBindingsAfterDelete). At the
 --- WORKFLOW_DEFAULT_SLOTS floor the definition is reset to empty instead of
---- removed; above the floor later slots shift down.
+--- removed.
 ---@param slot number
----@return number newCount  the slot count after the operation
+---@return number newCount
 function WorkflowRepository:deleteWorkflow(slot)
     local C = ACP.Data.Constants;
     local count = self:workflowCount();
@@ -190,11 +181,8 @@ function WorkflowRepository:findSpell(spellID)
         end
     end
 
-    -- Fallback for a learned rank ID the static catalog does not list (the
-    -- scan is class-gated to a limited fallback, so a saved step whose
-    -- spellID is a non-catalog rank would otherwise lose its metadata and
-    -- render "Not available" for Target/Skip). Match the spell by its
-    -- localized name instead, then borrow the catalog entry's behavior.
+    -- Fallback: match by localized name so a saved non-catalog rank keeps its
+    -- metadata (Target etc.).
     if (GetSpellInfo) then
         local ok, name = pcall(GetSpellInfo, spellID);
 
@@ -214,13 +202,9 @@ function WorkflowRepository:findSpell(spellID)
     return nil;
 end
 
---- Build a new step from a catalog entry (STEP FACTORY — the business rules
---- the UI used to re-derive): the step type from the category, the default
---- target ("player" for cast steps and party-castable pet steps), and the
---- product itemID. No per-step skip flag is stored (removed 2026-08-25 —
---- skipping is governed by the global `workflows.skipIfBuffedDefault`).
+--- Step factory: type from the category, default target, product itemID.
 ---@param entry table
----@param group table|nil  the spellbook group (for the name fallback)
+---@param group table|nil
 ---@return table step
 function WorkflowRepository:buildStep(entry, group)
     local C = ACP.Data.Constants;
@@ -245,13 +229,11 @@ function WorkflowRepository:buildStep(entry, group)
     return step;
 end
 
---- Resolve an Add Step menu key (a spellbook group name, a specific
---- rank/pet spellID, or an "item:<id>" equip-item key) into a NEW step built
---- by the factory. Shared by addStep (append) and replaceStep (in place).
+--- Resolve an Add Step menu key (group name, rank/pet spellID, or "item:<id>")
+--- into a new step. Shared by addStep and replaceStep.
 ---@param spellKey any
 ---@return table|nil step
 function WorkflowRepository:resolveNewStep(spellKey)
-    -- Equip-item entries use the "item:<id>" key convention.
     local equipItemID = tonumber(type(spellKey) == "string" and spellKey:match("^item:(%d+)$") or nil);
 
     if (equipItemID) then
@@ -268,8 +250,6 @@ function WorkflowRepository:resolveNewStep(spellKey)
     local group;
 
     if (type(spellKey) == "number") then
-        -- A specific rank (stone rank entry) or pet ability selected from the
-        -- Add Step list — the entry IS the target, no group resolution needed.
         entry = ACP.WorkflowSpellbook and ACP.WorkflowSpellbook:getEntry(spellKey) or self:findSpell(spellKey);
     else
         group = ACP.WorkflowSpellbook and ACP.WorkflowSpellbook:getGroup(spellKey);
@@ -288,8 +268,6 @@ function WorkflowRepository:resolveNewStep(spellKey)
     return self:buildStep(entry, group);
 end
 
---- Append a step to a workflow slot, resolved from the Add Step menu key.
---- Returns whether a step was added.
 ---@param slot number
 ---@param spellKey any
 ---@return boolean changed
@@ -306,10 +284,7 @@ function WorkflowRepository:addStep(slot, spellKey)
     return true;
 end
 
---- Replace the step at `index` with a NEW step resolved from `spellKey`
---- (the same Add Step menu key convention). The row keeps its position; the
---- new step is rebuilt by the factory, so its type/target/skip come from the
---- defaults of the NEW spell. Returns whether it was replaced.
+--- Replace the step at `index` with a new step built from the same menu key.
 ---@param slot number
 ---@param index number
 ---@param spellKey any
@@ -332,7 +307,6 @@ function WorkflowRepository:replaceStep(slot, index, spellKey)
     return true;
 end
 
---- Remove a step from a workflow slot. Returns whether it was removed.
 ---@param slot number
 ---@param index number
 ---@return boolean changed
@@ -348,7 +322,6 @@ function WorkflowRepository:removeStep(slot, index)
     return false;
 end
 
---- Swap a step with its neighbor. Returns whether it moved.
 ---@param slot number
 ---@param index number
 ---@param delta number  -1 (up) or +1 (down)

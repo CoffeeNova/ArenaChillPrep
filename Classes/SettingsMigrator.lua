@@ -1,9 +1,6 @@
 -- ArenaChillPrep — Classes/SettingsMigrator
--- The settings migration/normalization pipeline, extracted from Settings
--- (refactor Phase 7): workflow-name migration, step spellID fixes, the
--- placeholder-definition replacement, rank-key normalization and the
--- recursive defaults filler. Settings keeps the dot-path store + the
--- orchestration; the migrations live here.
+-- Settings migration/normalization pipeline: workflow names, step spellID
+-- fixes, placeholder replacement, rank-key normalization, defaults filler.
 
 ---@type ACP
 local _, ACP = ...;
@@ -18,8 +15,6 @@ local SettingsMigrator = {};
 ---@type SettingsMigrator
 ACP.SettingsMigrator = SettingsMigrator;
 
---- Migrate the placeholder names shipped by the previous five-slot defaults.
---- User-created names are left untouched.
 ---@param workflows table
 function SettingsMigrator:migrateWorkflowNames(workflows)
     local definitions = workflows and workflows.definitions;
@@ -43,11 +38,9 @@ function SettingsMigrator:migrateWorkflowNames(workflows)
     end
 end
 
---- Rewrite step spellIDs that older catalog data got wrong. 6307 is the Imp's
---- Blood Pact passive, but the old catalog shipped it as "Soul Link" — the
---- user's saved steps (and the UI rows) therefore read "Blood Pact" and the
---- skip check matched the imp's always-on aura, so Soul Link was never cast
---- (verified 2026-08-22; correct Soul Link talent spell = 19028).
+--- Rewrites saved step spellIDs that older catalog data got wrong:
+--- 6307 (Imp Blood Pact) → 19028 (Soul Link); Demon Armor rank 1 → TBC max
+--- 27260; removed Create Spellstone ranks 1-3 → 28172/22646.
 ---@param workflows table
 function SettingsMigrator:migrateStepSpellIDs(workflows)
     local definitions = workflows and workflows.definitions;
@@ -61,18 +54,26 @@ function SettingsMigrator:migrateStepSpellIDs(workflows)
 
         if (type(steps) == "table") then
             for _, step in ipairs(steps) do
-                if (type(step) == "table" and step.type == ACP.Data.Constants.WORKFLOW_STEP_CAST and step.spellID == 6307) then
-                    step.spellID = 19028;
+                if (type(step) == "table") then
+                    if (step.type == ACP.Data.Constants.WORKFLOW_STEP_CAST) then
+                        if (step.spellID == 6307) then
+                            step.spellID = 19028;
+                        elseif (step.spellID == 706) then
+                            step.spellID = 27260;
+                        end
+                    elseif (step.type == ACP.Data.Constants.WORKFLOW_STEP_CREATE_ITEM
+                        and (step.spellID == 2362 or step.spellID == 28171 or step.spellID == 28173)) then
+                        step.spellID = 28172;
+                        step.itemID = 22646;
+                    end
                 end
             end
         end
     end
 end
 
---- The placeholder steps shipped by the previous defaults (before the
---- m6-macro defaults). A saved definition is replaced by the new default when
---- its name AND its steps still match the placeholder exactly — a user-edited
---- workflow never matches and is left untouched.
+-- Historical snapshot of the previous placeholder defaults; a saved
+-- definition matching these exactly is replaced by the current default.
 local OLD_PLACEHOLDER_DEFINITIONS = {
     [1] = {
         name = "2s full prep",
@@ -88,7 +89,6 @@ local OLD_PLACEHOLDER_DEFINITIONS = {
     },
 };
 
---- Deep equality for the placeholder comparison (arrays of flat step tables).
 ---@param a any
 ---@param b any
 ---@return boolean
@@ -116,10 +116,6 @@ local function deepEqual(a, b)
     return true;
 end
 
---- Replace saved definitions that are still exactly the old placeholders with
---- the NEW defaults (the m6-macro pre-defined steps). Runs after the defaults
---- merge so a fresh profile (no saved definitions) is untouched — its merged
---- definitions are already the new ones, and their steps no longer match.
 ---@param workflows table
 ---@param defaults table
 function SettingsMigrator:migratePlaceholderDefinitions(workflows, defaults)
@@ -140,7 +136,7 @@ function SettingsMigrator:migratePlaceholderDefinitions(workflows, defaults)
     end
 end
 
---- Collapse string keys like "19013" into numeric [19013] inside every
+--- Collapses string keys like "19013" into numeric [19013] in every
 --- `items.<category>.ranks` table.
 ---@param items table|nil
 function SettingsMigrator:normalizeRankKeys(items)
@@ -157,7 +153,6 @@ function SettingsMigrator:normalizeRankKeys(items)
                     local asNumber = tonumber(key);
 
                     if (asNumber) then
-                        -- Numeric key wins if present; otherwise copy the string value.
                         if (ranks[asNumber] == nil) then
                             ranks[asNumber] = value;
                         end
@@ -170,10 +165,6 @@ function SettingsMigrator:normalizeRankKeys(items)
     end
 end
 
---- Whether a table is an ARRAY (positive consecutive integer keys only) —
---- e.g. a workflow's `steps` list. Arrays are owned by the saved definition
---- wholesale: missing indices are NEVER filled from defaults (that would
---- prepend default steps to saved ones — a hybrid).
 ---@param value any
 ---@return boolean
 local function isSequence(value)
@@ -194,9 +185,9 @@ local function isSequence(value)
     return count == 0 or value[count] ~= nil;
 end
 
---- Recursively copy default values for keys missing from `target`.
---- Arrays (sequences) are only copied when the whole key is missing — their
---- contents are never index-merged.
+--- Recursively copy default values for keys missing from `target`. Arrays
+--- (sequences) are copied only when the whole key is missing — never
+--- index-merged.
 ---@param target table
 ---@param defaults table
 function SettingsMigrator:ensureDefaults(target, defaults)

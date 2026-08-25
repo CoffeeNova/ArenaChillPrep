@@ -180,8 +180,6 @@ end
 
 function testMigrateStepSpellIDsRewritesSoulLink()
     -- Arrange: a character saved a Soul Link step with the old mislabeled
-    -- spellID 6307 (the Imp's Blood Pact). It must be rewritten to the real
-    -- Soul Link talent spell 19028; other steps are untouched.
     _G.ArenaChillPrepCharDB = {
         workflows = {
             definitions = {
@@ -190,6 +188,8 @@ function testMigrateStepSpellIDsRewritesSoulLink()
                     name = "test",
                     steps = {
                         { type = "cast", spellID = 6307, spellName = "Soul Link", target = "player", skipIfBuffed = true },
+                        { type = "cast", spellID = 706, spellName = "Demon Armor", target = "player" },
+                        { type = "createItem", spellID = 2362, spellName = "Create Spellstone", itemID = 5522 },
                         { type = "pet", spellID = 27269, spellName = "Fire Shield", target = "player" }
                     }
                 }
@@ -203,7 +203,10 @@ function testMigrateStepSpellIDsRewritesSoulLink()
     local def3 = Settings:get("workflows.definitions.3");
     lu.assertEquals(def3.steps[1].spellID, 19028);
     lu.assertEquals(def3.steps[1].spellName, "Soul Link");
-    lu.assertEquals(def3.steps[2].spellID, 27269);
+    lu.assertEquals(def3.steps[2].spellID, 27260);
+    lu.assertEquals(def3.steps[3].spellID, 28172);
+    lu.assertEquals(def3.steps[3].itemID, 22646);
+    lu.assertEquals(def3.steps[4].spellID, 27269);
     -- Cleanup: drop the injected character DB so later suites see no residue.
     _G.ArenaChillPrepCharDB = nil;
     freshSettings();

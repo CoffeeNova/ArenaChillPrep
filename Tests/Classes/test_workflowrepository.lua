@@ -1,7 +1,4 @@
 -- ArenaChillPrep — Tests/Classes/test_workflowrepository.lua
--- Covers Classes/WorkflowRepository.lua: the settings paths, workflowCount,
--- the CRUD operations (addWorkflow/deleteWorkflow/cloneWorkflow/addStep/
--- removeStep/moveStep) and the step factory (buildStep) + findSpell.
 
 local ACP = _G.ACP;
 local Repo = ACP.WorkflowRepository;

@@ -1,13 +1,4 @@
 -- ArenaChillPrep — Tests/Classes/test_deliverycontroller.lua
--- Covers Classes/DeliveryController.lua: state machine, bracket gate,
--- givenTo, gate safety, retries, combat deferral.
---
--- The REAL ArenaPrep/Inventory methods are driven through _G.__stub and
--- module state (no method overrides → no cross-suite leakage). Only
--- ACP.Utils.Timers is swapped for the synchronous recorder and restored.
---
--- IMPORTANT: installStubs() copies State into the module state, so it must
--- be called AFTER setting the State fields (at the end of Arrange).
 
 local ACP = _G.ACP;
 local DC = ACP.DeliveryController;

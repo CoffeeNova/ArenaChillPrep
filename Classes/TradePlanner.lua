@@ -1,10 +1,6 @@
 -- ArenaChillPrep — Classes/TradePlanner
--- Decision logic for WHAT to pass: which items of which selected ranks to
--- queue for the open trade window, and whether a category's selected ranks
--- are all ready. Extracted from TradeManager (queueConfiguredItems — a
--- layering violation: TradeManager's contract is low-level window automation)
--- and shared with DeliveryController (categoryReady — same rank grouping).
--- TradeManager itself only places whatever the orchestrator queues.
+-- WHAT to pass: which items of which selected ranks to queue for the open
+-- trade window, and whether a category's selected ranks are all ready.
 
 ---@type ACP
 local _, ACP = ...;
@@ -22,7 +18,6 @@ local TradePlanner = {};
 ---@type TradePlanner
 ACP.TradePlanner = TradePlanner;
 
---- The item categories the current class can pass (from the catalog).
 ---@return table
 function TradePlanner:getCategories()
     local classItems = ACP.Data.Items.classItems;
@@ -31,8 +26,8 @@ function TradePlanner:getCategories()
     return classItems[englishClass] or {};
 end
 
---- Selected ranks grouped by their catalog `rank`: rank -> array of selected
---- itemIDs. Paired IDs (19012/19013 = Major) share one rank group.
+--- Selected ranks grouped by catalog `rank` (paired IDs like 19012/19013
+--- share one rank group).
 ---@param catalog table
 ---@param ranks table|nil
 ---@return table<number, table>
@@ -54,10 +49,9 @@ function TradePlanner:selectedRanksByGroup(catalog, ranks)
     return byRank;
 end
 
---- Whether the selected ranks of an enabled category are ALL ready. Ranks are
---- grouped by their catalog `rank`: paired IDs (19012/19013 = Major) count as
---- ONE rank — the sum of their counts must reach `setting.count`.
----@param category string  plural catalog key ("healthstones")
+--- Whether ALL selected ranks of an enabled category are ready (paired IDs
+--- count as ONE rank — the sum of their counts must reach `setting.count`).
+---@param category string
 ---@param setting table
 ---@return boolean
 function TradePlanner:categoryReady(category, setting)
@@ -86,12 +80,9 @@ function TradePlanner:categoryReady(category, setting)
     return anySelected;
 end
 
---- Build the placement queue for the current class: `count` items of EVERY
---- selected rank (ranks grouped by catalog `rank`; paired IDs are one rank).
---- Ranks are processed in ascending order for a deterministic queue. The
---- controller only calls this once ALL selected ranks are ready, so each rank
---- has enough items to queue.
----@return table  array of itemIDs
+--- Placement queue: `count` items of EVERY selected rank, ascending rank
+--- order. Called only once all selected ranks are ready.
+---@return table
 function TradePlanner:buildQueue()
     local queue = {};
     local categories = self:getCategories();
@@ -115,8 +106,6 @@ function TradePlanner:buildQueue()
             for _, rank in ipairs(ranks) do
                 local remaining = needed;
 
-                -- Queue up to the remaining need for this rank, using whatever
-                -- ID of the rank we actually have.
                 for _, itemID in ipairs(byRank[rank]) do
                     if (remaining > 0) then
                         local count = ACP.Inventory:getCount(itemID);

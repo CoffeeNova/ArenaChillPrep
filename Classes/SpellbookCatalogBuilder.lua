@@ -1,9 +1,6 @@
 -- ArenaChillPrep — Classes/SpellbookCatalogBuilder
--- Runtime spell catalog assembly, extracted from WorkflowSpellbook
--- (refactor Phase 7): the entriesByID / groupsByName / groupsByCategory
--- tables (owned by the WorkflowSpellbook facade), entry building (metadata
--- enrichment + stone rank→item mapping), group finalizing (rank sorting) and
--- the read API. Every function takes the SPELLBOOK as its first argument.
+-- Runtime catalog assembly: entry building, rank→item mapping, grouping and
+-- reads. Operates on the WorkflowSpellbook facade (first argument).
 
 ---@type ACP
 local _, ACP = ...;
@@ -17,11 +14,9 @@ local tinsert = _G.tinsert;
 local sort = _G.table.sort;
 local GetSpellInfo = _G.GetSpellInfo;
 
---- Rank -> primary itemID map derived from the Data/Items catalog (the single
---- source of truth for stone rank→item data). For a rank with a historical ID
---- PAIR (healthstones 1-5) the LOWER ID is the primary variant — the same one
---- the old hardcoded tables used.
----@param category string  catalog key ("healthstones" | "soulstones")
+--- Rank -> primary itemID from Data/Items (healthstones ranks 1-5 are ID
+--- pairs — the LOWER ID is the primary variant).
+---@param category string
 ---@return table<number, number>
 local function rankItemIDs(category)
     local results = {};
@@ -71,7 +66,6 @@ local function rankResultItem(spellName, rank)
     return nil;
 end
 
---- Find the static metadata entry matching a localized or catalog spell name.
 ---@param spellName string
 ---@return table|nil entry
 ---@return string|nil category
@@ -95,7 +89,6 @@ local function staticMetadata(spellName)
     return nil;
 end
 
---- Wipe the runtime catalog (the facade owns the tables).
 ---@param spellbook table
 function CatalogBuilder:reset(spellbook)
     spellbook.entriesByID = {};
@@ -108,7 +101,6 @@ function CatalogBuilder:reset(spellbook)
     end
 end
 
---- Add one learned spellbook entry to the runtime catalog.
 ---@param spellbook table
 ---@param spellID number
 ---@param spellName string
@@ -141,10 +133,7 @@ function CatalogBuilder:addEntry(spellbook, spellID, spellName, rankText, icon, 
 
     spellbook.entriesByID[spellID] = entry;
 
-    -- Stones are grouped by FAMILY ("Create Healthstone"), not the
-    -- rank-suffixed localized spell name the scan reports, so
-    -- getHighestKnownRank can match the whole family regardless of which rank
-    -- name the scan produced. Non-stone spells keep their own group name.
+    -- Stones group by FAMILY so getHighestKnownRank can match all ranks.
     local groupKey = (ACP.Data.Workflows and ACP.Data.Workflows.stoneRanks
         and ACP.Data.Workflows.stoneRanks[spellID]
         and ACP.Data.Workflows.stoneRanks[spellID].spellName) or spellName;
@@ -155,15 +144,12 @@ function CatalogBuilder:addEntry(spellbook, spellID, spellName, rankText, icon, 
         spellbook.groupsByName[groupKey] = group;
         tinsert(spellbook.groupsByCategory[category], group);
     elseif (group.category == "other" and category ~= "other") then
-        -- A duplicate localized name matched known metadata later in the scan.
         group.category = category;
     end
 
     tinsert(group.entries, entry);
 end
 
---- Sort the runtime catalog after a scan: group entries by rank ascending
---- (spellID as tiebreaker) and the per-category group lists by name.
 ---@param spellbook table
 function CatalogBuilder:finalize(spellbook)
     for _, group in pairs(spellbook.groupsByName) do
@@ -202,12 +188,8 @@ function CatalogBuilder:getEntry(spellbook, spellID)
     return spellbook.entriesByID[spellID];
 end
 
---- Highest KNOWN rank of a spell, resolved by name. A stored lower rank can be
---- UNLEARNED at high level (the client replaces it with the max rank), so the
---- engine must cast the rank the player actually has. Each candidate rank's
---- spellID is confirmed with IsPlayerSpell (the static merge adds every rank to
---- the catalog, but only the trained ones are castable). Returns nil when the
---- spell name has no known rank.
+--- Highest rank of a spell the player actually KNOWS (IsPlayerSpell per
+--- candidate — a stored lower rank can be unlearned at high level).
 ---@param spellbook table
 ---@param spellName string
 ---@return table|nil

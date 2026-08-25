@@ -1,23 +1,7 @@
 -- ArenaChillPrep — Classes/TradeManager
--- Low-level trade window automation (dependency-free).
---
--- Flow:
---   startTrade(unit) -> InitiateTrade
---   TRADE_SHOW       -> partner verification, ACP_TRADE_OPENED (the
---                       DeliveryController fills the item queue via
---                       TradePlanner), start FIFO placement queue
---   placement        -> one item per tick: findItemInBags (skip soulbound)
---                       -> UseContainerItem (auto-places into the next slot)
---   ITEM_UNLOCKED    -> re-queue items the game removed (< 0.5 s)
---   completion       -> UI_INFO_MESSAGE == ERR_TRADE_COMPLETE -> ACP_TRADE_COMPLETED
---   TRADE_CLOSED     -> ClearCursor(); failure verdict after 0.5 s if no
---                       completion -> ACP_TRADE_FAILED(reason)
--- Retries with backoff are driven by the DeliveryController (state machine),
--- not here; the retry count is the `tradeRetries` setting.
---
--- NOTE: there is NO auto-accept. AcceptTrade() is restricted on 2.5.x
--- (requires a hardware event) — a programmatic call or button:Click() is
--- silently blocked by the client. The player confirms the trade manually.
+-- Low-level trade window automation. No auto-accept: AcceptTrade() is
+-- restricted on 2.5.x — the player confirms the trade manually.
+-- Retries are driven by the DeliveryController.
 
 ---@type ACP
 local _, ACP = ...;
@@ -51,8 +35,7 @@ local TradeManager = {
 ---@type TradeManager
 ACP.TradeManager = TradeManager;
 
---- Initiate a trade with `unit`.
---- The outcome is reported via ACP_TRADE_COMPLETED / ACP_TRADE_FAILED.
+--- Outcome is reported via ACP_TRADE_COMPLETED / ACP_TRADE_FAILED.
 ---@param unit string
 function TradeManager:startTrade(unit)
     if (self.trading) then
@@ -70,10 +53,8 @@ function TradeManager:startTrade(unit)
     InitiateTrade(unit);
 end
 
---- Reset the low-level trade state. Called by the DeliveryController when the
---- trade window never opened (open timeout): without this, `trading` would
---- stay true and block every later startTrade. Also used to clean up a stuck
---- placement queue.
+--- Reset the low-level trade state (otherwise `trading` would block every
+--- later startTrade).
 function TradeManager:cancel()
     if (not self.trading) then
         return;
@@ -88,13 +69,8 @@ function TradeManager:cancel()
     ClearCursor();
 end
 
---- Resolve an item's GUID by bag/slot. On 2.5.5 C_Item.GetItemGUID takes an
---- ItemLocation, not (bag, slot) — create the location first. Returns nil if
---- the item doesn't exist or the location is incomplete
---- (ITEM_UNLOCKED can arrive with a bag-only reference). The ItemLocation /
---- C_Item.GetItemGUID / DoesItemExist APIs are verified present on 20506
---- (/dump 2026-08-24 — the former API-existence guards were always-true and
---- were removed with W15).
+--- Item GUID by bag/slot. On 2.5.5 C_Item.GetItemGUID takes an ItemLocation;
+--- ITEM_UNLOCKED can arrive with a bag-only reference.
 ---@param bag number
 ---@param slot number
 ---@return string|nil
@@ -112,24 +88,18 @@ function TradeManager:getItemGUID(bag, slot)
     return C_Item.GetItemGUID(location);
 end
 
---- Replace the low-level placement queue with `itemIDs`. The WHAT-to-pass
---- decision (which items, which ranks) lives in ACP.TradePlanner — the
---- orchestrator hands TradeManager a plain item list to place. Called when the
---- trade window opens (ACP_TRADE_OPENED), before the FIFO ticker starts.
+--- Replace the placement queue (the WHAT is decided by TradePlanner).
 ---@param itemIDs table
 function TradeManager:queueItems(itemIDs)
     self.ItemsToAdd = (type(itemIDs) == "table") and itemIDs or {};
 end
 
---- The unit token of the trade currently in progress (nil when idle).
 ---@return string|nil
 function TradeManager:getPartner()
     return self.partnerUnit;
 end
 
---- Process one queued item (FIFO). Called by the placement ticker.
 function TradeManager:processItemQueue()
-    -- Never touch items if the window is gone.
     if (not TradeFrame or not TradeFrame:IsShown()) then
         ACP.Utils.Timers:cancel("TradeItemQueue");
         return;
@@ -138,7 +108,7 @@ function TradeManager:processItemQueue()
     local itemID = self.ItemsToAdd[1];
 
     if (not itemID) then
-        return; -- queue empty, ticker just idles
+        return;
     end
 
     tremove(self.ItemsToAdd, 1);
@@ -172,7 +142,6 @@ function TradeManager:processItemQueue()
     useContainerItem(bag, slot);
 end
 
---- Start the FIFO placement ticker (one item per tick).
 function TradeManager:startItemQueue()
     ACP.Utils.Timers:cancel("TradeItemQueue");
 
@@ -187,22 +156,15 @@ function TradeManager:_init()
     end
     self._initialized = true;
 
-    -- The trade window opened.
     ACP.Events:register("TradeManager.TRADE_SHOW", "TRADE_SHOW", function()
-        -- Record the partner from the window (for a partner-initiated trade we
-        -- did not set partnerUnit ourselves).
+        -- A partner-initiated trade did not set partnerUnit ourselves.
         if (not self.partnerUnit) then
             self.partnerUnit = UnitName("NPC", true) or "unknown";
         end
 
         ACP:debugPrint("trade window shown (partner: %s)", tostring(self.partnerUnit));
 
-        -- We initiated this trade: place items as designed.
         if (self.trading) then
-            -- Cancel the one-shot open timeout directly AND via the event
-            -- (belt and suspenders — never let a stale timer kill a live
-            -- trade). ACP_TRADE_OPENED makes the DeliveryController fill the
-            -- placement queue (TradePlanner) before the ticker starts.
             ACP.Utils.Timers:cancel("TradeOpen");
             ACP.Events:fire("ACP_TRADE_OPENED", self.partnerUnit);
 
@@ -210,9 +172,7 @@ function TradeManager:_init()
             return;
         end
 
-        -- Inbound trade: someone opened a trade with us. If the controller is
-        -- actively prepping, take over the already-open window and deliver the
-        -- prep items into it instead of trying to start a second trade.
+        -- Inbound trade: take over the already-open window when prepping.
         if (ACP.DeliveryController:shouldTakeOverInboundTrade()) then
             ACP:debugPrint("taking over inbound trade with %s", tostring(self.partnerUnit));
             self.trading = true;
@@ -222,8 +182,7 @@ function TradeManager:_init()
         end
     end);
 
-    -- Trade completed successfully. UI_INFO_MESSAGE on 2.5.5 delivers the
-    -- message as the SECOND argument.
+    -- UI_INFO_MESSAGE delivers the message as the SECOND argument on 2.5.5.
     ACP.Events:register("TradeManager.UI_INFO_MESSAGE", "UI_INFO_MESSAGE", function(_, message)
         if (message == ERR_TRADE_COMPLETE) then
             self.tradeCompleted = true;
@@ -233,7 +192,7 @@ function TradeManager:_init()
     end);
 
     -- Window closed: success arrives as UI_INFO_MESSAGE shortly after, so
-    -- delay the failure verdict (TRADE_CLOSED alone means failure, not success).
+    -- delay the failure verdict.
     ACP.Events:register("TradeManager.TRADE_CLOSED", "TRADE_CLOSED", function()
         -- Dedupe: a second TRADE_CLOSED for the same window (client quirk)
         -- must not schedule another verdict.

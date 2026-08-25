@@ -112,7 +112,7 @@ Apply one refactor at a time using the [technique catalog](./references/refactor
 - **Metatables are reference-based** — `setmetatable(self, { __index = Class })` shares one metatable; don't rebuild it per instance.
 - **Never name a parameter `arg`** (shadows the implicit vararg table on old Lua).
 - **Globals may not exist on a given WoW client.** Guard `_G.` lookups (`_G.CLASS_WARLOCK or "WARLOCK"`) and use call-time shims for APIs that may be missing — verified pattern in this workspace.
-- **Comments explain WHY, not HOW.** If the "how" needs explanation, the code should be split so its name explains it.
+- **Comments are rare; explain WHY, not HOW (user rule 2026-08-25).** Never write history ("was → now", dates, regression stories) — that lives in git and `.ai/`. One short line for a non-obvious why; keep LDoc annotations; multi-line prose belongs in `.ai/`, not code.
 
 ## References
 

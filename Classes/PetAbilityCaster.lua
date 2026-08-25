@@ -1,19 +1,14 @@
 -- ArenaChillPrep — Classes/PetAbilityCaster
--- Pet-ability step execution, extracted from WorkflowEngine (refactor
--- Phase 5): pet macro baking, the pressed-but-unverified poll, the
--- PostClick (onSecurePress) handling and the pet-arming lifecycle. Every
--- function takes the ENGINE as its first argument — the engine OWNS the
--- state; this module only implements the pet mechanics.
+-- Pet-ability steps: macro baking, pressed-but-unverified poll, PostClick
+-- handling, arming during a player cast. Operates on the engine (first arg).
 
 ---@type ACP
 local _, ACP = ...;
 
 local tostring = _G.tostring;
 
---- State machine values (Data/Constants.WORKFLOW_STATE).
 local WS = ACP.Data.Constants.WORKFLOW_STATE;
 
---- Pause reason keys (Data/Constants.WORKFLOW_REASON).
 local Reason = ACP.Data.Constants.WORKFLOW_REASON;
 
 ---@class PetAbilityCaster
@@ -22,19 +17,8 @@ local PetAbilityCaster = {};
 ---@type PetAbilityCaster
 ACP.PetAbilityCaster = PetAbilityCaster;
 
---- The secure macro a pet step casts: "/cast [pet:<type>,@unit] <pet ability>".
---- The @unit conditional is the 20506-reliable target form (the old
---- [target=unit] form did NOT redirect pet abilities in live tests 2026-08-22 —
---- a Fire Shield step with target=party1 buffed the PLAYER; TBC Classic guides
---- use [@arena1]/[@mouseover] for pet abilities on this client). The
---- [pet:<type>] conditional gates the cast on the RIGHT pet being out: when it
---- isn't (e.g. the pet was dismissed mid-summon), the macro does NOTHING instead
---- of the client treating it as a player cast — no interruption, no
---- "blocked action" popup. This is how Sacrifice is pressed during the
---- Summon Felhunter cast (the Voidwalker is still out until the summon
---- completes) — the requirement that ALL pet abilities work armed-during-cast.
---- "player" and a missing target both default to @player (the warlock); a
---- party target keeps its explicit unit.
+--- "/cast [pet:<type>,@unit] <ability>": [@unit] is the 20506-reliable target
+--- form; [pet:<type>] makes the press a no-op when that pet is not out.
 ---@param engine WorkflowEngine
 ---@param step table
 ---@return string
@@ -47,16 +31,9 @@ function PetAbilityCaster:petMacroText(engine, step)
     return ("/cast [%s@%s] %s"):format(petCond, target, name);
 end
 
---- Whether a pet ability ACTUALLY applied (2026-08-22, live-verified): the
---- client applies a pet ability only when the key is pressed near the END of
---- the player's cast — an early press is silently swallowed (Sacrifice pressed
---- +2 s into a 6 s summon did nothing; +5 s fired). The engine must therefore
---- NOT mark a pet step done on the press itself; it marks it done only when
---- the effect is visible:
----   1. the ability's buff is on the target (matched by NAME like
----      isAlreadyBuffed — covers Fire Shield AND the Sacrifice shield);
----   2. the Voidwalker is GONE while the player's cast is still in progress
----      (Sacrifice consumes the pet).
+--- A press is NOT completion: the client silently swallows a pet ability
+--- pressed early in the player's cast. Verified by effect: the ability's buff
+--- on the target (by name) or the Voidwalker gone while the cast runs.
 ---@param engine WorkflowEngine
 ---@param step table
 ---@return boolean
@@ -65,9 +42,6 @@ function PetAbilityCaster:isPetAbilityApplied(engine, step)
         return true;
     end
 
-    -- Sacrifice consumes the Voidwalker. Only during the player's cast — after
-    -- the summon completes the NEW pet exists, so "pet gone" would no longer
-    -- prove anything (and UnitExists is true anyway).
     local entry = engine:getCatalogEntry(step.spellID);
 
     if (entry and entry.pet == "voidwalker" and engine.waitingForCast
@@ -78,12 +52,6 @@ function PetAbilityCaster:isPetAbilityApplied(engine, step)
     return false;
 end
 
---- Poll a pressed-but-unconfirmed pet step: when the ability's effect lands
---- (isPetAbilityApplied), mark the armed step done / advance the standalone
---- step. The poll is user-paced — no timeout; the user keeps pressing until
---- the client applies the ability. Bails as soon as the state no longer
---- matches (advance/pause/reset/interrupt all clear pendingPetStep or cancel
---- the timer via cancelTimers).
 ---@param engine WorkflowEngine
 function PetAbilityCaster:armPetVerify(engine)
     ACP.Utils.Timers:interval("WorkflowPetVerify", 0.1, function()
@@ -123,13 +91,8 @@ function PetAbilityCaster:armPetVerify(engine)
     end);
 end
 
---- Point every live secure button at a macro that casts a pet ability by name
---- (/cast resolves pet abilities — e.g. Fire Shield, Sacrifice). The pet casts
---- the ability independently of the player's cast/GCD, so the step is
---- user-paced: the press (PostClick → onSecurePress) is the completion signal
---- and the engine does not wait for any player cast to finish.
 ---@param engine WorkflowEngine
----@param step table  the pet step
+---@param step table
 function PetAbilityCaster:petAbility(engine, step)
     local name = engine:spellName(step.spellID);
     local macro = self:petMacroText(engine, step);
@@ -162,12 +125,6 @@ function PetAbilityCaster:petAbility(engine, step)
     end
 end
 
---- The secure button was clicked by the user's hardware key press (PostClick).
---- Branches by what is pending: an armed pet step during a player cast, a
---- standalone pet step, or a player-cast press (handled by the SENT/START flow).
---- The slot parameter is the pressed button's slot (nil for the /acp bind
---- hotkey button); a press from a button that does not belong to the current
---- slot is ignored (defensive — the client routes one key to one button).
 ---@param engine WorkflowEngine
 ---@param slot number|nil
 function PetAbilityCaster:onSecurePress(engine, slot)
@@ -183,13 +140,6 @@ function PetAbilityCaster:onSecurePress(engine, slot)
     local def = engine:getDefinition(engine.currentSlot);
 
     if (engine.pendingPetStep) then
-        -- The armed pet ability was pressed during the player's cast. The
-        -- press is NOT enough: the client silently swallows pet abilities
-        -- pressed early in the cast (live 2026-08-22 — Sacrifice at +2 s of a
-        -- 6 s summon did nothing, +5 s fired). Mark the step done ONLY when
-        -- the effect is verified (isPetAbilityApplied); otherwise keep it
-        -- armed — the user keeps spamming the key until the ability lands
-        -- (armPetVerify also catches the effect the moment it appears).
         local petStep = def and def.steps[engine.pendingPetStep];
 
         if (petStep and petStep.type == C.WORKFLOW_STEP_PET) then
@@ -214,9 +164,6 @@ function PetAbilityCaster:onSecurePress(engine, slot)
     end
 
     if (engine.waitingForPet) then
-        -- A standalone pet step's key was pressed — the same verification
-        -- applies: advance only once the ability's effect is visible. The
-        -- key stays click-bound (no takeover), so re-presses re-run the macro.
         local step = def and def.steps[engine.stepIndex];
 
         if (step and step.type == C.WORKFLOW_STEP_PET and engine:isPetAbilityApplied(step)) then
@@ -231,7 +178,6 @@ function PetAbilityCaster:onSecurePress(engine, slot)
             engine:armPetVerify();
         end
     end
-    -- Player-cast presses are handled by the UNIT_SPELLCAST_SENT/START flow.
 end
 
 return ACP;
