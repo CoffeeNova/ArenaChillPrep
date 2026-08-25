@@ -218,18 +218,22 @@ function UI.Slider(parent, name, text, x, y, min, max, step, getter, setter, too
     slider:SetWidth(150);
     slider:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y - 24);
 
+    -- Integer steps (e.g. a retry count) show without decimals; fractional
+    -- steps (e.g. a delay in seconds) keep one decimal.
+    local valueFmt = (step == math.floor(step)) and "%.0f" or "%.1f";
+
     local valueText = slider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall");
     valueText:SetPoint("LEFT", slider, "RIGHT", 6, 0);
 
     slider:SetScript("OnValueChanged", function(_, value)
-        valueText:SetText(("%.1f"):format(value));
+        valueText:SetText(valueFmt:format(value));
         setter(value);
     end);
 
     slider.Refresh = function()
         local value = getter() or min;
         slider:SetValue(value);
-        valueText:SetText(("%.1f"):format(value));
+        valueText:SetText(valueFmt:format(value));
     end;
     slider.Refresh();
 

@@ -363,6 +363,7 @@ end
 
 function testOpenTimeoutFailsAndRetries()
     -- Arrange
+    ACP.Settings:set("tradeRetries", 3);
     State.PartyCount = 1;
     State.Bracket = "2v2";
     State.Remaining = 45;
@@ -433,6 +434,7 @@ end
 
 function testOnTradeFailedRetries()
     -- Arrange
+    ACP.Settings:set("tradeRetries", 3);
     installStubs();
     resetController();
     DC:setState("TRADING");
@@ -751,6 +753,7 @@ function testTradeFailedEvent()
     reinitDC();
     installStubs();
     resetController();
+    ACP.Settings:set("tradeRetries", 3);
     DC:setState("TRADING");
     -- Act
     ACP.Events:fire("ACP_TRADE_FAILED", "closed");
