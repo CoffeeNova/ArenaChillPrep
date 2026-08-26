@@ -3,6 +3,7 @@
 ## Notes: Auto-trades crafted items (e.g. healthstones) to your partner during arena preparation on TBC Anniversary.
 ## Author: ArenaChillPrep
 ## Version: 0.1.0
+## X-Curse-Project-ID: 1669048
 ## License: MIT
 ## SavedVariables: ArenaChillPrepDB
 ## SavedVariablesPerCharacter: ArenaChillPrepCharDB

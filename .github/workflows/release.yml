@@ -1,0 +1,306 @@
+# release.yml - auto-release pipeline for ArenaChillPrep.
+#
+# On every push to `main` (and on `v*` tag pushes / manual dispatch):
+#   1. test     - run the LuaJIT unit-test suite; a failure OR coverage < 90%
+#                 exits non-zero and blocks the release (see Tests/run_tests.lua)
+#   2. version  - determine the release version from git tags (common CurseForge
+#                 notation: vMAJOR.MINOR.PATCH tags; patch is bumped from the
+#                 latest tag when pushing to main without a tag)
+#   3. bundle   - set the TOC version, build ArenaChillPrep-<version>.zip via
+#                 .ai/tools/deploy.ps1 -Bundle (same artifact set as a deploy)
+#   4. release  - create the GitHub release (v<version>) with the zip attached
+#   5. curseforge - upload the zip to CurseForge (project id from the TOC
+#                 `## X-Curse-Project-ID:` line; API token from the CF_API_KEY
+#                 secret)
+#
+# Pushes that touch ONLY infra paths (docs, tooling, CI config - see the
+# `paths-ignore` list below) do NOT trigger a release: the bundle contains
+# exactly the game artifacts, so such commits cannot change it.
+# Escape hatches:
+#   - put `[skip ci]` (or `[ci skip]`) in a commit message to skip a run even
+#     when addon code changes (native GitHub feature). Caveat: a `v*` tag
+#     pointing at a `[skip ci]` commit is skipped too - use workflow_dispatch
+#     to force such a release.
+#   - workflow_dispatch runs the pipeline unconditionally.
+#
+# Secrets required: CF_API_KEY (CurseForge project API token). Everything else
+# runs on the built-in GITHUB_TOKEN.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    # Skip the pipeline for infra-only pushes. `paths-ignore` applies to both
+    # branch and tag pushes; a v* tag on an infra-only commit is skipped too
+    # (force such a release via workflow_dispatch).
+    paths-ignore:
+      - ".ai/**"
+      - ".github/**"
+      - "AGENTS.md"
+      - "README.md"
+      - "CHANGELOG.md"
+      - ".gitignore"
+      - ".env.example"
+      - "luahelper.json"
+      - "dist/**"
+      - "Tests/**"
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Run unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install LuaJIT
+        run: sudo apt-get update && sudo apt-get install -y luajit
+
+      - name: Run LuaJIT test suite
+        # run_tests.lua exits 0 = pass + coverage >= 90%, 1 = test failures,
+        # 2 = coverage < 90%. A non-zero exit fails the job and (because bundle
+        # depends on this job) blocks the release.
+        run: luajit Tests/run_tests.lua
+
+  version:
+    name: Determine version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.determine.outputs.version }}
+      tag: ${{ steps.determine.outputs.tag }}
+      previous-tag: ${{ steps.determine.outputs.previous-tag }}
+      should-release: ${{ steps.determine.outputs.should-release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: determine
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tags = @(git tag --list 'v*' 2>$null)
+          $semverTags = @($tags | Where-Object { $_ -match '^v?\d+\.\d+\.\d+$' } | Sort-Object { [version]$_.TrimStart('v') })
+          # git describe would exit 128 with no tags and poison $LASTEXITCODE,
+          # which the runner's pwsh wrapper turns into a step failure.
+          $exactTag = git tag --list --points-at HEAD 'v*' 2>$null | Select-Object -First 1
+          $shouldRelease = "true"
+          if ($exactTag) {
+            if ($exactTag -notmatch '^v\d+\.\d+\.\d+$') {
+              throw "Tag $exactTag is not a valid semver tag (expected vMAJOR.MINOR.PATCH)."
+            }
+            $version = $exactTag.TrimStart('v')
+            $existing = @(gh release list --limit 1000 --json tagName --jq '.[].tagName' 2>$null)
+            if ($existing -contains $exactTag) {
+              $shouldRelease = "false"
+              Write-Host "Release $exactTag already exists - skipping."
+            }
+            $previousTag = ($semverTags | Where-Object { $_ -ne $exactTag } | Select-Object -Last 1)
+          }
+          else {
+            $latest = $semverTags | Select-Object -Last 1
+            if ($latest) {
+              $parts = $latest.TrimStart('v').Split('.')
+              $version = "$($parts[0]).$($parts[1]).$([int]$parts[2] + 1)"
+              $previousTag = $latest
+            }
+            else {
+              $version = "0.1.0"
+              $previousTag = ""
+            }
+          }
+          "version=$version" | Out-File $env:GITHUB_OUTPUT -Append
+          "tag=v$version" | Out-File $env:GITHUB_OUTPUT -Append
+          "previous-tag=$previousTag" | Out-File $env:GITHUB_OUTPUT -Append
+          "should-release=$shouldRelease" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "Version: $version (previous tag: '$previousTag')"
+
+  bundle:
+    name: Build addon bundle
+    needs: [version, test]
+    if: needs.version.outputs.should-release == 'true'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set TOC version
+        shell: pwsh
+        run: |
+          $toc = Get-ChildItem *.toc | Select-Object -First 1
+          $content = Get-Content $toc.FullName | ForEach-Object {
+            if ($_ -match '^## Version:') { "## Version: $env:VERSION" } else { $_ }
+          }
+          $text = ($content -join "`n") + "`n"
+          [System.IO.File]::WriteAllText($toc.FullName, $text, [System.Text.UTF8Encoding]::new($false))
+
+      - name: Build release bundle
+        shell: pwsh
+        run: |
+          .\.ai\tools\deploy.ps1 -Bundle -OutDir dist
+          Get-ChildItem dist | ForEach-Object {
+            Write-Host "  $($_.Name) ($([math]::Round($_.Length / 1KB, 1)) KB)"
+          }
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ needs.version.outputs.tag }}
+          path: dist/*.zip
+          retention-days: 14
+
+  release:
+    name: Create GitHub release
+    needs: [version, bundle]
+    if: needs.version.outputs.should-release == 'true'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG: ${{ needs.version.outputs.tag }}
+      PREV_TAG: ${{ needs.version.outputs.previous-tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: bundle-${{ needs.version.outputs.tag }}
+          path: dist
+
+      - name: Build release notes
+        shell: pwsh
+        run: |
+          if ($env:PREV_TAG) {
+            $commits = @(git log --oneline --no-decorate "$env:PREV_TAG..HEAD")
+            $since = "Changes since $env:PREV_TAG"
+          }
+          else {
+            $commits = @(git log --oneline --no-decorate)
+            $since = "Initial release"
+          }
+          $notes = @(
+            "## ArenaChillPrep $env:VERSION"
+            ""
+            "### $since"
+            ""
+          ) + ($commits | ForEach-Object { "- $_" }) + @(
+            ""
+            "Download: **ArenaChillPrep-$env:VERSION.zip** (TBC Anniversary, Interface 20506)"
+          )
+          $notes -join "`n" | Set-Content -Path release-notes.md -Encoding utf8NoBOM
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ZIP=$(find dist -name '*.zip' | head -n 1)
+          if [ -z "$ZIP" ]; then
+            echo "::error::No bundle zip found in dist/"
+            exit 1
+          fi
+          gh release create "$TAG" "$ZIP" \
+            --title "ArenaChillPrep $VERSION" \
+            --notes-file release-notes.md
+
+  curseforge:
+    name: Publish to CurseForge
+    needs: [version, bundle]
+    if: needs.version.outputs.should-release == 'true'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      PREV_TAG: ${{ needs.version.outputs.previous-tag }}
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: bundle-${{ needs.version.outputs.tag }}
+          path: dist
+
+      - name: Publish to CurseForge
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (-not $env:CF_API_KEY) {
+            Write-Host "::warning::CF_API_KEY secret not configured - skipping CurseForge publish."
+            exit 0
+          }
+          $toc = Get-ChildItem *.toc | Select-Object -First 1
+          $projectId = (Get-Content $toc.FullName | Where-Object { $_ -match '^## X-Curse-Project-ID:\s*(\d+)' } |
+            ForEach-Object { $Matches[1] } | Select-Object -First 1)
+          if (-not $projectId -or $projectId -eq "0") {
+            Write-Host "::warning::X-Curse-Project-ID not set in the .toc - skipping CurseForge publish."
+            exit 0
+          }
+
+          # Derive the game version from the TOC interface (20506 -> 2.5.6).
+          $interface = (Get-Content $toc.FullName | Where-Object { $_ -match '^## Interface:\s*(\d+)' } |
+            ForEach-Object { $Matches[1] } | Select-Object -First 1)
+          $target = "$([int]$interface.Substring(0, $interface.Length - 4))." +
+            "$([int]$interface.Substring($interface.Length - 4, 2))." +
+            "$([int]$interface.Substring($interface.Length - 2, 2))"
+
+          # Resolve the CurseForge version ID for TBC Classic (gameVersionTypeID 73246).
+          $headers = @{ "x-api-token" = $env:CF_API_KEY }
+          $versions = Invoke-RestMethod -Uri "https://wow.curseforge.com/api/game/wow/versions" -Headers $headers
+          $bcc = @($versions | Where-Object { $_.gameVersionTypeID -eq 73246 })
+          $match = $bcc | Where-Object { $_.name -eq $target } | Select-Object -First 1
+          if (-not $match) {
+            $lower = $bcc | Where-Object { $_.name -lt $target } | Sort-Object id | Select-Object -Last 1
+            if ($lower) {
+              Write-Host "::warning::No CurseForge version '$target', using '$($lower.name)'"
+              $match = $lower
+            }
+          }
+          if (-not $match) { throw "No CurseForge game version found for TBC Classic (target '$target')." }
+          Write-Host "CurseForge game version: $($match.name) (id $($match.id))"
+
+          if ($env:PREV_TAG) {
+            $commits = @(git log --oneline --no-decorate "$env:PREV_TAG..HEAD")
+          }
+          else {
+            $commits = @(git log --oneline --no-decorate)
+          }
+          $changelog = "# ArenaChillPrep $env:VERSION`n`n" + (($commits | ForEach-Object { "- $_" }) -join "`n")
+
+          # The CurseForge API expects string enums ("release"/"markdown") and the
+          # file as a FileInfo object (a string path is sent as a plain form field).
+          $metadata = @{
+            displayName   = "ArenaChillPrep v$env:VERSION"
+            gameVersions  = @([int]$match.id)
+            releaseType   = "release"
+            changelog     = $changelog
+            changelogType = "markdown"
+          } | ConvertTo-Json -Depth 5
+
+          $zip = Get-ChildItem dist -Recurse -Filter *.zip | Select-Object -First 1
+          if (-not $zip) { throw "No bundle zip found in dist/." }
+          $result = Invoke-RestMethod -Method Post `
+            -Uri "https://wow.curseforge.com/api/projects/$projectId/upload-file" `
+            -Headers $headers `
+            -Form @{ metadata = $metadata; file = Get-Item $zip.FullName }
+          Write-Host "Uploaded to CurseForge: $($result.displayName) (file id $($result.id))"

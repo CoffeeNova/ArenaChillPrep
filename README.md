@@ -2,7 +2,10 @@
 
 Automatically hands crafted items to your arena partner during **arena preparation** in World of Warcraft: TBC Anniversary (Classic).
 
-Currently supports **Warlock** — passes **Healthstones** (all ranks, default: Major + Master). More classes and items are planned.
+Currently supports **Warlock** and **Mage**:
+
+- **Warlock** — auto-passes **Healthstones** (all ranks, default: Major + Master) to your partner.
+- **Mage** — runs pre-arena **prep workflows**: conjures food, water and Mana Emeralds, casts buffs (Arcane Intellect/Brilliance, Amplify/Dampen Magic), armors and wards, and opens a Ritual of Refreshment. More classes and items are planned.
 
 > For developers and AI agents: technical docs live in `AGENTS.md` and the `.ai/` directory (context and architecture). `README.md` is for players.
 
@@ -17,6 +20,16 @@ While the arena preparation buff is active:
 5. Stops trading **15 seconds before the gates open** (configurable) so you never send a trade mid-fight.
 
 The addon only acts during arena preparation, never in combat, and never sends gold.
+
+## Prep workflows
+
+For **Mage** (and Warlock) the addon ships a set of **default prep workflows** you can run before the gates open. Each workflow is an ordered list of steps that the addon executes for you:
+
+- **Conjure** food, water and Mana Emeralds (`createItem` steps).
+- **Cast** buffs, armors and wards on yourself or party members (`cast` steps, target `player` / `party1`…`party4`).
+- **Ritual of Refreshment** to drop a refreshment table.
+
+Defaults cover the common brackets — `2s standard`, `2s with healer`, `3s standard`, `3s pom pyro`, `5s standard` — and you can edit, clone or add your own from Interface Options → **AddOns → ArenaChillPrep → Workflows**. Bind a workflow to a key and fire it once during prep; the engine walks the steps in order and skips anything already active.
 
 ## Slash commands
 
@@ -41,14 +54,14 @@ All settings persist between sessions.
 ## Requirements
 
 - World of Warcraft: TBC Anniversary (Interface 20506).
-- A Warlock with healthstones crafted during arena preparation.
+- A Warlock (healthstones) or Mage (conjured items + buffs) during arena preparation.
 - No libraries required.
 
 ## Known limits (v0.1)
 
-- Warlock + healthstones only.
+- Warlock + Mage only.
 - 2v2 only in the UI (3v3/5v5 can be enabled in settings).
-- The addon does **not** craft items — craft them yourself during prep.
+- The addon does **not** craft items on its own — Warlock/Mage prep workflows conjure or cast during prep, but you start the workflow.
 
 ## Development
 
