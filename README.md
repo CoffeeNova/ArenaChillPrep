@@ -1,5 +1,5 @@
 # ArenaChillPrep
-![banner](docs\curseforge\project-banner.png)
+![banner](docs/curseforge/project-banner.png)
 
 Automatically hands crafted items to your arena partner during **arena preparation** in World of Warcraft: TBC Anniversary (Classic).
 
