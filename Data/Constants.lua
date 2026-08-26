@@ -73,6 +73,9 @@ ACP.Data.Constants = {
 
     WORKFLOW_CAST_TIMEOUT = 10,
 
+    -- Grace for an in-flight conjured item (the preceding createItem advanced on cast-end without it).
+    WORKFLOW_EQUIP_GRACE = 3,
+
     -- Hidden SecureActionButtonTemplate that casts when the hotkey is pressed.
     WORKFLOW_BUTTON_NAME = "ACPWorkflowButton",
 

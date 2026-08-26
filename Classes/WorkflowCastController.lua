@@ -274,8 +274,16 @@ function WorkflowCastController:onCastComplete(engine)
             return;
         end
 
-        -- Item not in bags yet: ACP_ITEMS_CHANGED or the poll will advance us.
-        engine:waitForItem(engine.expectedItemID);
+        if (ACP.WorkflowItemSteps:nextRepeatsConjure(engine)) then
+            -- Repeated conjure: the next step's goal-met check needs this item.
+            engine:waitForItem(engine.expectedItemID);
+            return;
+        end
+
+        engine.expectedItemID = nil;
+        engine.expectedItemIDs = nil;
+        engine.expectedBaseline = nil;
+        engine:advance();
         return;
     end
 

@@ -115,6 +115,25 @@ function WorkflowItemSteps:isItemCreated(engine)
     return engine:countExpectedItems() > (engine.expectedBaseline or 0);
 end
 
+--- A following createItem step whose RESOLVED cast equals this step's keeps the item wait.
+---@param engine WorkflowEngine
+---@return boolean
+function WorkflowItemSteps:nextRepeatsConjure(engine)
+    local def = engine:getDefinition(engine.currentSlot);
+    local steps = def and def.steps;
+    local current = steps and steps[engine.stepIndex];
+    local nextStep = steps and steps[engine.stepIndex + 1];
+
+    if (not (current and nextStep)) or nextStep.type ~= ACP.Data.Constants.WORKFLOW_STEP_CREATE_ITEM then
+        return false;
+    end
+
+    local currentID = engine:resolveCastInfo(current);
+    local nextID = engine:resolveCastInfo(nextStep);
+
+    return currentID ~= nil and currentID == nextID;
+end
+
 --- Whether a createItem step's product is already in bags. A castable stored
 --- rank expects exactly its own rank's variants (a leftover higher-rank stone
 --- must not satisfy it); the family-widened set is only for the upgraded cast.
@@ -159,21 +178,9 @@ function WorkflowItemSteps:isItemAlreadyPresent(engine, step)
     return false;
 end
 
---- equipItem: the same secure button re-pointed to type="item". No spell
---- events fire for item use — completion is poll-driven (item leaves bags).
----@param engine WorkflowEngine
----@param step table
-function WorkflowItemSteps:equipItem(engine, step)
-    local itemID = step.itemID;
+--- Points the secure button at the item and arms the completion poll.
+local function armEquip(engine, step, itemID, itemName)
     engine.waitingForEquip = true;
-    engine.equipItemID = itemID;
-
-    if (ACP.Inventory:countItem(itemID) == 0) then
-        engine:advance();
-        return;
-    end
-
-    local itemName = engine:itemName(step);
 
     engine:setCastAttribute("type", "item");
     engine:setCastAttribute("item", itemName);
@@ -203,6 +210,43 @@ function WorkflowItemSteps:equipItem(engine, step)
 
         if (ACP.Inventory:countItem(itemID) == 0) then
             ACP.Utils.Timers:cancel("WorkflowItemPoll");
+            engine:advance();
+        end
+    end);
+end
+
+--- An absent item is in flight from the conjure step that advanced on cast-end;
+--- poll up to WORKFLOW_EQUIP_GRACE, then advance as already-equipped.
+---@param engine WorkflowEngine
+---@param step table
+function WorkflowItemSteps:equipItem(engine, step)
+    local itemID = step.itemID;
+    engine.equipItemID = itemID;
+    local itemName = engine:itemName(step);
+
+    if (ACP.Inventory:countItem(itemID) > 0) then
+        armEquip(engine, step, itemID, itemName);
+        return;
+    end
+
+    local grace = ACP.Data.Constants.WORKFLOW_EQUIP_GRACE;
+    local ticks = 0;
+
+    ACP.Utils.Timers:interval("WorkflowEquipGrace", 0.25, function()
+        if (engine.state ~= WS.RUNNING or engine.equipItemID ~= itemID) then
+            return;
+        end
+
+        ticks = ticks + 1;
+
+        if (ACP.Inventory:countItem(itemID) > 0) then
+            ACP.Utils.Timers:cancel("WorkflowEquipGrace");
+            armEquip(engine, step, itemID, itemName);
+            return;
+        end
+
+        if (ticks * 0.25 >= grace) then
+            ACP.Utils.Timers:cancel("WorkflowEquipGrace");
             engine:advance();
         end
     end);

@@ -198,12 +198,12 @@ function testDefaultWorkflow2Macro()
     -- Assert
     lu.assertEquals(def.enabled, true);
     lu.assertEquals(def.name, "2s no sacrifice");
-    lu.assertEquals(#def.steps, 15);
+    lu.assertEquals(#def.steps, 17);
     lu.assertEquals(def.steps[1].spellID, 688);
     lu.assertNil(def.steps[1].skipIfBuffed);
     lu.assertEquals(def.steps[6].type, "summon");
     lu.assertEquals(def.steps[6].spellID, 691);
-    lu.assertEquals(def.steps[10].type, "equipItem");
-    lu.assertEquals(def.steps[10].itemID, 22646);
-    lu.assertEquals(def.steps[15].spellID, 28610);
+    lu.assertEquals(def.steps[12].type, "equipItem");
+    lu.assertEquals(def.steps[12].itemID, 22646);
+    lu.assertEquals(def.steps[17].spellID, 28610);
 end

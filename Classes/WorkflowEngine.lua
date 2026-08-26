@@ -154,6 +154,7 @@ function WorkflowEngine:cancelTimers()
     ACP.Utils.Timers:cancel("WorkflowGCD");
     ACP.Utils.Timers:cancel("WorkflowItemPoll");
     ACP.Utils.Timers:cancel("WorkflowPetVerify");
+    ACP.Utils.Timers:cancel("WorkflowEquipGrace");
 end
 
 ---@param newState string

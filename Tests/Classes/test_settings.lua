@@ -153,7 +153,7 @@ function testMigratePlaceholderDefinitions()
     lu.assertEquals(def1.steps[19].spellID, 28610);
     local def2 = Settings:get("workflows.definitions.2");
     lu.assertEquals(def2.name, "2s no sacrifice");
-    lu.assertEquals(#def2.steps, 15);
+    lu.assertEquals(#def2.steps, 17);
     lu.assertEquals(def2.steps[6].spellID, 691);
     freshSettings();
 end

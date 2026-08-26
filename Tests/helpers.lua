@@ -18,10 +18,10 @@ local H = {};
 H.SyncTimers = {
     Handles = {},
     after = function(_, name, delay, cb)
-        H.SyncTimers.Handles[name] = { cb = cb, delay = delay };
+        H.SyncTimers.Handles[name] = { cb = cb, delay = delay, kind = "after" };
     end,
     interval = function(_, name, period, cb)
-        H.SyncTimers.Handles[name] = { cb = cb, period = period };
+        H.SyncTimers.Handles[name] = { cb = cb, period = period, kind = "interval" };
     end,
     cancel = function(_, name)
         H.SyncTimers.Handles[name] = nil;
@@ -36,8 +36,15 @@ function H.advance(name)
     if (not handle) then
         return false;
     end
-    H.SyncTimers.Handles[name] = nil;
-    handle.cb();
+    if (handle.kind == "after") then
+        H.SyncTimers.Handles[name] = nil;
+        handle.cb();
+    else
+        -- Interval timers re-arm on the real clock; keep the handle so the
+        -- callback can be advanced repeatedly. A callback that cancels the
+        -- timer (Handle set to nil) naturally stops further ticks.
+        handle.cb();
+    end
     return true;
 end
 

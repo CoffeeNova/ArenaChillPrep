@@ -207,6 +207,7 @@ end
 -- ---- WorkflowItemSteps: equipItem flow ----
 
 function testEquipItemAlreadyEquippedAdvances()
+    installTimers();
     local savedDef = setupEngine({
         { type = "equipItem", itemID = 22646, itemName = "Master Spellstone" },
     });
@@ -214,8 +215,35 @@ function testEquipItemAlreadyEquippedAdvances()
 
     Engine:executeCurrentStep();
 
-    lu.assertEquals(Engine.state, "DONE", "item not in bags = already equipped");
+    lu.assertEquals(Engine.state, "RUNNING", "item absent → grace poll, not advanced yet");
+    lu.assertIsTrue(H.hasTimer("WorkflowEquipGrace"));
+
+    for _ = 1, 12 do
+        H.advance("WorkflowEquipGrace");
+    end
+
+    lu.assertEquals(Engine.state, "DONE", "grace elapsed → advance as already equipped");
     restoreCount();
+    teardownEngine(savedDef);
+end
+
+function testEquipItemGraceArmsWhenItemArrives()
+    installTimers();
+    local savedDef = setupEngine({
+        { type = "equipItem", itemID = 22646, itemName = "Master Spellstone" },
+    });
+    local restoreCount = countItemStub({});
+
+    Engine:executeCurrentStep();
+    lu.assertEquals(Engine.state, "RUNNING");
+
+    restoreCount();
+    local restoreCount2 = countItemStub({ [22646] = 1 });
+    H.advance("WorkflowEquipGrace");
+
+    lu.assertIsTrue(Engine.waitingForEquip, "item appeared → equip armed");
+    lu.assertIsTrue(H.hasTimer("WorkflowItemPoll"));
+    restoreCount2();
     teardownEngine(savedDef);
 end
 
@@ -318,8 +346,9 @@ function testSpellcastStopCompletesCastStep()
     teardownEngine(savedDef);
 end
 
-function testSpellcastStopCompletesCreateItemViaWait()
-    -- STOP with an expected item that is NOT in bags yet → waitForItem poll.
+function testSpellcastStopCompletesCreateItemImmediately()
+    -- Single createItem step (no next step) advances on cast-end even when
+    -- the item is not yet in bags.
     installTimers();
     local savedDef = setupEngine({
         { type = "createItem", spellName = "Create Healthstone", spellID = 27230, itemID = 22105 },
@@ -332,7 +361,61 @@ function testSpellcastStopCompletesCreateItemViaWait()
 
     ACP.Events:fire("UNIT_SPELLCAST_STOP", "player");
 
-    lu.assertIsTrue(H.hasTimer("WorkflowItemPoll"));
+    lu.assertEquals(Engine.state, "DONE", "advances on cast-end without the item");
+    lu.assertIsFalse(H.hasTimer("WorkflowItemPoll"));
+    lu.assertIsNil(Engine.expectedItemID);
+    restoreCount();
+    teardownEngine(savedDef);
+end
+
+function testSpellcastStopRepeatedConjureKeepsItemWait()
+    -- 2 consecutive Create Healthstone steps (different stored ranks, same
+    -- resolved cast) → the first keeps the item wait so step 2's skip sees it.
+    installTimers();
+    local savedDef = setupEngine({
+        { type = "createItem", spellName = "Create Healthstone", spellID = 27230, itemID = 22105 },
+        { type = "createItem", spellName = "Create Healthstone", spellID = 11730, itemID = 19012 },
+    }, { [27230] = true });
+    Engine.waitingForCast = true;
+    Engine.expectedItemID = 22105;
+    Engine.expectedItemIDs = { 22105 };
+    Engine.expectedBaseline = 0;
+    local skipSnap = ACP.Settings:get("workflows.skipIfBuffedDefault");
+    ACP.Settings:set("workflows.skipIfBuffedDefault", true);
+    local restoreCount = countItemStub({});
+
+    ACP.Events:fire("UNIT_SPELLCAST_STOP", "player");
+
+    lu.assertIsTrue(H.hasTimer("WorkflowItemPoll"), "waits because the next step repeats the conjure");
+
+    restoreCount();
+    local restoreCount2 = countItemStub({ [22105] = 1 });
+    H.advance("WorkflowItemPoll");
+
+    lu.assertEquals(Engine.state, "DONE", "item arrives → step 2 skips (goal met) → done");
+    restoreCount2();
+    ACP.Settings:set("workflows.skipIfBuffedDefault", skipSnap);
+    teardownEngine(savedDef);
+end
+
+function testSpellcastStopDifferentConjureAdvancesImmediately()
+    -- 2 different conjure steps (Water → Food) → advance on cast-end.
+    installTimers();
+    local savedDef = setupEngine({
+        { type = "createItem", spellName = "Conjure Water", spellID = 27090, itemID = 22018 },
+        { type = "createItem", spellName = "Conjure Food", spellID = 33717, itemID = 22019 },
+    }, { [27090] = true, [33717] = true });
+    Engine.waitingForCast = true;
+    Engine.expectedItemID = 22018;
+    Engine.expectedItemIDs = { 22018 };
+    Engine.expectedBaseline = 0;
+    local restoreCount = countItemStub({});
+
+    ACP.Events:fire("UNIT_SPELLCAST_STOP", "player");
+
+    lu.assertEquals(Engine.stepIndex, 2, "advance immediately (next conjure differs)");
+    lu.assertIsFalse(H.hasTimer("WorkflowItemPoll"), "no item wait opened");
+    lu.assertEquals(Engine.expectedItemID, 22019, "step 2 re-armed its own cast");
     restoreCount();
     teardownEngine(savedDef);
 end
