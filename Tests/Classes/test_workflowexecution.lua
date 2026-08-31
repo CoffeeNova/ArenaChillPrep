@@ -67,6 +67,9 @@ local function teardownEngine(savedDef)
     Engine.isTesting = false;
     Engine.testSlot = nil;
     Engine:clearTransientState(true);
+    _G.__stub.cvars = {};
+    Engine.spellRanksOverridden = false;
+    Engine.savedSpellRanksCVar = nil;
     _G.__stub.bindingKeys = nil;
     _G.__stub.bindingActions = nil;
     _G.__stub.overrideClicks = nil;
@@ -780,6 +783,139 @@ function testDefinitionNameEmpty()
     local savedDef = setupEngine({});
     Engine.currentSlot = 1;
     lu.assertEquals(Engine:definitionName(), "exec-test");
+    teardownEngine(savedDef);
+end
+
+function testNeedsSpellRanksFalseWithoutRankedCreateStep()
+    local savedDef = setupEngine({
+        { type = "cast", spellName = "Fel Armor", spellID = 28189, target = "player" },
+    });
+
+    lu.assertIsFalse(Engine:needsSpellRanks());
+    teardownEngine(savedDef);
+end
+
+function testNeedsSpellRanksTrueForBelowMaxRankCreateItem()
+    local savedDef = setupEngine({
+        { type = "createItem", spellName = "Create Healthstone", spellID = 11730, itemID = 19012 },
+    });
+
+    lu.assertIsTrue(Engine:needsSpellRanks(), "rank 5 < rank 6 family max");
+    teardownEngine(savedDef);
+end
+
+function testNeedsSpellRanksFalseForMaxRankCreateItem()
+    local savedDef = setupEngine({
+        { type = "createItem", spellName = "Create Healthstone", spellID = 27230, itemID = 22105 },
+    });
+
+    lu.assertIsFalse(Engine:needsSpellRanks(), "rank 6 is the family max");
+    teardownEngine(savedDef);
+end
+
+function testEnableSpellRanksOverridesAndRemembers()
+    local savedDef = setupEngine({});
+    _G.__stub.cvars["showAllSpellRanks"] = "0";
+
+    Engine:enableSpellRanks();
+
+    lu.assertIsTrue(Engine.spellRanksOverridden);
+    lu.assertEquals(Engine.savedSpellRanksCVar, "0");
+    lu.assertEquals(_G.__stub.cvars["showAllSpellRanks"], "1");
+    teardownEngine(savedDef);
+end
+
+function testEnableSpellRanksIdempotent()
+    local savedDef = setupEngine({});
+    _G.__stub.cvars["showAllSpellRanks"] = "0";
+
+    Engine:enableSpellRanks();
+    Engine:enableSpellRanks();
+
+    lu.assertEquals(Engine.savedSpellRanksCVar, "0", "first saved value kept");
+    teardownEngine(savedDef);
+end
+
+function testRestoreSpellRanksRestoresPreviousValue()
+    local savedDef = setupEngine({});
+    _G.__stub.cvars["showAllSpellRanks"] = "0";
+    Engine:enableSpellRanks();
+
+    Engine:restoreSpellRanks();
+
+    lu.assertIsFalse(Engine.spellRanksOverridden);
+    lu.assertIsNil(Engine.savedSpellRanksCVar);
+    lu.assertEquals(_G.__stub.cvars["showAllSpellRanks"], "0");
+    teardownEngine(savedDef);
+end
+
+function testRestoreSpellRanksNilPreviousRestoresZero()
+    local savedDef = setupEngine({});
+    Engine:enableSpellRanks();
+
+    Engine:restoreSpellRanks();
+
+    lu.assertEquals(_G.__stub.cvars["showAllSpellRanks"], "0");
+    teardownEngine(savedDef);
+end
+
+function testRestoreSpellRanksNoopWhenNotOverridden()
+    local savedDef = setupEngine({});
+    _G.__stub.cvars["showAllSpellRanks"] = "0";
+
+    Engine:restoreSpellRanks();
+
+    lu.assertEquals(_G.__stub.cvars["showAllSpellRanks"], "0", "user value untouched");
+    teardownEngine(savedDef);
+end
+
+function testStartWithBelowMaxRankStepOverridesCVar()
+    local savedDef = setupEngine({
+        { type = "createItem", spellName = "Create Healthstone", spellID = 11730, itemID = 19012 },
+    });
+    local restoreCount = countItemStub({ [6265] = 1 });
+    _G.__stub.cvars["showAllSpellRanks"] = "0";
+    Engine.state = "IDLE";
+    Engine.stepIndex = 1;
+    Engine.debugBypass = true;
+
+    Engine:start(1);
+
+    lu.assertEquals(_G.__stub.cvars["showAllSpellRanks"], "1", "override applied on start");
+    lu.assertEquals(Engine.savedSpellRanksCVar, "0");
+
+    Engine:reset();
+
+    lu.assertEquals(_G.__stub.cvars["showAllSpellRanks"], "0", "restored on reset");
+    restoreCount();
+    teardownEngine(savedDef);
+end
+
+function testStartWithMaxRankStepsLeavesCVar()
+    local savedDef = setupEngine({
+        { type = "createItem", spellName = "Create Healthstone", spellID = 27230, itemID = 22105 },
+    });
+    local restoreCount = countItemStub({ [6265] = 1 });
+    _G.__stub.cvars["showAllSpellRanks"] = "0";
+    Engine.state = "IDLE";
+    Engine.stepIndex = 1;
+    Engine.debugBypass = true;
+
+    Engine:start(1);
+
+    lu.assertEquals(_G.__stub.cvars["showAllSpellRanks"], "0", "user value untouched");
+    restoreCount();
+    teardownEngine(savedDef);
+end
+
+function testPlayerLogoutRestoresSpellRanks()
+    local savedDef = setupEngine({});
+    _G.__stub.cvars["showAllSpellRanks"] = "0";
+    Engine:enableSpellRanks();
+
+    ACP.Events:fire("PLAYER_LOGOUT");
+
+    lu.assertEquals(_G.__stub.cvars["showAllSpellRanks"], "0");
     teardownEngine(savedDef);
 end
 

@@ -21,6 +21,7 @@ _G.__stub = {
     spellbookItems = {},   -- { [slot] = { itemType, spellID, name, rankText, passive } }
     spellInfo = {},        -- { [spellID] = name } for GetSpellInfo
     knownSpells = {},      -- { [spellID] = true } for IsPlayerSpell (tests mutate)
+    cvars = {},            -- { [name] = value } for GetCVar/SetCVar
 };
 
 -- ---- time (captured at file scope by Events/ArenaPrep/TradeManager) ----
@@ -279,3 +280,7 @@ end;
 function _G.ClearOverrideBindings(owner)
     _G.__stub.overrideClicks = {};
 end;
+
+-- ---- CVars (captured by WorkflowItemSteps) ----
+_G.GetCVar = function(name) return _G.__stub.cvars[name] end;
+_G.SetCVar = function(name, value) _G.__stub.cvars[name] = tostring(value); end;

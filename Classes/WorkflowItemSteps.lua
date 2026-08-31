@@ -14,6 +14,9 @@ local WS = ACP.Data.Constants.WORKFLOW_STATE;
 
 local Reason = ACP.Data.Constants.WORKFLOW_REASON;
 
+local GetCVar = _G.GetCVar;
+local SetCVar = _G.SetCVar;
+
 ---@class WorkflowItemSteps
 local WorkflowItemSteps = {};
 
@@ -277,6 +280,97 @@ function WorkflowItemSteps:waitForItem(engine, itemID)
 
         engine:pause(Reason.CastTimeout);
     end);
+end
+
+--- Highest rank of the family `familyName` in the rank table.
+---@param rankTable table
+---@param familyName string
+---@return number|nil
+local function familyMaxRank(rankTable, familyName)
+    local max = nil;
+
+    for _, candidate in pairs(rankTable) do
+        if (candidate.spellName == familyName and (not max or candidate.rank > max)) then
+            max = candidate.rank;
+        end
+    end
+
+    return max;
+end
+
+--- Whether the run's definition contains a createItem step whose stored rank
+--- is BELOW the family's max rank — such a rank can be hidden by the
+--- spellbook's "Show all spell ranks" toggle and its secure cast fizzles.
+---@param engine WorkflowEngine
+---@return boolean
+function WorkflowItemSteps:needsSpellRanks(engine)
+    local def = engine:getDefinition(engine.currentSlot);
+
+    if (not def) then
+        return false;
+    end
+
+    local rankTable = activeRankTable();
+
+    if (not rankTable) then
+        return false;
+    end
+
+    for _, step in ipairs(def.steps or {}) do
+        if (step.type == ACP.Data.Constants.WORKFLOW_STEP_CREATE_ITEM) then
+            local rankEntry = rankTable[step.spellID];
+
+            if (rankEntry) then
+                local max = familyMaxRank(rankTable, rankEntry.spellName);
+
+                if (max and rankEntry.rank < max) then
+                    return true;
+                end
+            end
+        end
+    end
+
+    return false;
+end
+
+--- Sets showAllSpellRanks = "1" for the duration of the run (restored by
+--- restoreSpellRanks). Idempotent — a second call while active is a no-op.
+---@param engine WorkflowEngine
+function WorkflowItemSteps:enableSpellRanks(engine)
+    if (engine.spellRanksOverridden) then
+        return;
+    end
+
+    local name = ACP.Data.Constants.SPELL_RANKS_CVAR;
+
+    if (GetCVar) then
+        engine.savedSpellRanksCVar = GetCVar(name);
+
+        if (engine.savedSpellRanksCVar ~= "1" and SetCVar) then
+            SetCVar(name, "1");
+        end
+    end
+
+    engine.spellRanksOverridden = true;
+    ACP:debugPrint("workflow spell ranks override: on");
+end
+
+--- Restores the user's showAllSpellRanks value (nil → "0", the default).
+---@param engine WorkflowEngine
+function WorkflowItemSteps:restoreSpellRanks(engine)
+    if (not engine.spellRanksOverridden) then
+        return;
+    end
+
+    local name = ACP.Data.Constants.SPELL_RANKS_CVAR;
+
+    if (SetCVar) then
+        SetCVar(name, engine.savedSpellRanksCVar or "0");
+    end
+
+    engine.savedSpellRanksCVar = nil;
+    engine.spellRanksOverridden = false;
+    ACP:debugPrint("workflow spell ranks override: off");
 end
 
 ---@param engine WorkflowEngine

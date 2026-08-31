@@ -82,6 +82,9 @@ ACP.Data.Constants = {
     -- Gates summon/createItem steps that consume a shard.
     SOUL_SHARD_ITEM_ID = 6265,
 
+    -- Spellbook CVar gating hidden-rank castability (see CONTEXT gotcha #26).
+    SPELL_RANKS_CVAR = "showAllSpellRanks",
+
     WORKFLOW_TARGETS = { "player", "party1", "party2", "party3", "party4" },
 
     WORKFLOW_STATE = {

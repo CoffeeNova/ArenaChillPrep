@@ -85,6 +85,12 @@ local WorkflowEngine = {
     testSlot = nil,
 
     instantPressDetected = false,
+
+    ---@type boolean
+    spellRanksOverridden = false,
+
+    ---@type string|nil
+    savedSpellRanksCVar = nil,
 };
 
 ---@type WorkflowEngine
@@ -541,6 +547,7 @@ function WorkflowEngine:executeCurrentStep()
         local wasTesting = self.isTesting;
 
         self:cancelTimers();
+        self:restoreSpellRanks();
         self:clearKeyCast();
         self:setState(WS.DONE);
 
@@ -622,6 +629,7 @@ end
 
 function WorkflowEngine:reset()
     self:cancelTimers();
+    self:restoreSpellRanks();
     self:setState(WS.IDLE);
     self.currentSlot = nil;
     self.stepIndex = 1;
@@ -692,6 +700,9 @@ function WorkflowEngine:start(slot)
         self:setState(WS.RUNNING);
         ACP:debugPrint(ACP.L.workflow.resumed, slot, definition.name or "", self.stepIndex);
         ACP.Events:fire("ACP_WORKFLOW_RESUMED");
+        if (self:needsSpellRanks()) then
+            self:enableSpellRanks();
+        end
         self:executeCurrentStep();
         return;
     end
@@ -702,6 +713,9 @@ function WorkflowEngine:start(slot)
     self:setState(WS.RUNNING);
     ACP:debugPrint(ACP.L.workflow.started, slot, definition.name or "");
     ACP.Events:fire("ACP_WORKFLOW_STARTED", slot);
+    if (self:needsSpellRanks()) then
+        self:enableSpellRanks();
+    end
     self:executeCurrentStep();
 end
 
@@ -762,6 +776,10 @@ function WorkflowEngine:_init()
 
     ACP.Events:register("WE.COMBAT_START", "PLAYER_REGEN_DISABLED", function()
         self:pause(Reason.InCombat);
+    end);
+
+    ACP.Events:register("WE.LOGOUT_SPELL_RANKS", "PLAYER_LOGOUT", function()
+        self:restoreSpellRanks();
     end);
 end
 
@@ -857,6 +875,18 @@ end
 
 function WorkflowEngine:waitForItem(itemID)
     return ACP.WorkflowItemSteps:waitForItem(self, itemID);
+end
+
+function WorkflowEngine:needsSpellRanks()
+    return ACP.WorkflowItemSteps:needsSpellRanks(self);
+end
+
+function WorkflowEngine:enableSpellRanks()
+    return ACP.WorkflowItemSteps:enableSpellRanks(self);
+end
+
+function WorkflowEngine:restoreSpellRanks()
+    return ACP.WorkflowItemSteps:restoreSpellRanks(self);
 end
 
 function WorkflowEngine:boundKey()
